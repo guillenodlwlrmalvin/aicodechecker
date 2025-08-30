@@ -34,6 +34,23 @@ def initialize_database(db_path: str) -> None:
                 heuristic_score REAL,
                 check_ok INTEGER,
                 check_errors TEXT,
+                file_id INTEGER,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id),
+                FOREIGN KEY(file_id) REFERENCES uploaded_files(id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS uploaded_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                original_filename TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                file_type TEXT NOT NULL,
+                content TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
@@ -67,15 +84,58 @@ def create_user(db_path: str, username: str, password_hash: str) -> int:
         conn.close()
 
 
-def create_analysis(db_path: str, user_id: int, code: str, language: str,
-                    heuristic_label: str, heuristic_score: float,
-                    check_ok: bool, check_errors: List[str]) -> int:
+def create_uploaded_file(db_path: str, user_id: int, filename: str, original_filename: str, 
+                        file_size: int, file_type: str, content: str) -> int:
     conn = _connect(db_path)
     try:
         cur = conn.execute(
             """
-            INSERT INTO analyses (user_id, code, language, heuristic_label, heuristic_score, check_ok, check_errors, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO uploaded_files (user_id, filename, original_filename, file_size, file_type, content, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                filename,
+                original_filename,
+                file_size,
+                file_type,
+                content,
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def get_uploaded_files(db_path: str, user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute(
+            """
+            SELECT * FROM uploaded_files 
+            WHERE user_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT ?
+            """,
+            (user_id, limit)
+        )
+        rows = cur.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def create_analysis(db_path: str, user_id: int, code: str, language: str,
+                    heuristic_label: str, heuristic_score: float,
+                    check_ok: bool, check_errors: List[str], file_id: Optional[int] = None) -> int:
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute(
+            """
+            INSERT INTO analyses (user_id, code, language, heuristic_label, heuristic_score, check_ok, check_errors, file_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -85,6 +145,7 @@ def create_analysis(db_path: str, user_id: int, code: str, language: str,
                 float(heuristic_score),
                 1 if check_ok else 0,
                 json.dumps(check_errors or []),
+                file_id,
                 datetime.utcnow().isoformat(),
             ),
         )
@@ -99,20 +160,16 @@ def get_recent_analyses(db_path: str, user_id: int, limit: int = 10) -> List[Dic
     try:
         cur = conn.execute(
             """
-            SELECT id, code, language, heuristic_label, heuristic_score, check_ok, check_errors, created_at
-            FROM analyses
-            WHERE user_id = ?
-            ORDER BY datetime(created_at) DESC
+            SELECT a.*, uf.original_filename 
+            FROM analyses a 
+            LEFT JOIN uploaded_files uf ON a.file_id = uf.id
+            WHERE a.user_id = ? 
+            ORDER BY a.created_at DESC 
             LIMIT ?
             """,
-            (user_id, limit),
+            (user_id, limit)
         )
-        rows = [dict(r) for r in cur.fetchall()]
-        for r in rows:
-            try:
-                r['check_errors'] = json.loads(r.get('check_errors') or '[]')
-            except Exception:
-                r['check_errors'] = []
-        return rows
+        rows = cur.fetchall()
+        return [dict(row) for row in rows]
     finally:
         conn.close() 

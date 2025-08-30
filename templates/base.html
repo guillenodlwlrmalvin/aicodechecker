@@ -1,66 +1,90 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="utf-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<title>CodeCrft — AI Code Origin Detector</title>
-	<meta name="description" content="CodecRaft detects whether code snippets are AI-generated or human-written using heuristics and your local LM Studio model." />
-	<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}CodeCraft - AI Code Detection{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-	<nav class="navbar">
-		<a class="brand" href="{{ url_for('index') }}">CodeCraft</a>
-		<div class="spacer"></div>
-		<button id="theme-toggle" class="button" type="button">Light Mode</button>
-		{% if g.user %}
-			<a class="nav-link {% if request.path.startswith('/dashboard') %}active{% endif %}" href="{{ url_for('dashboard') }}">Dashboard</a>
-			<a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
-			<span class="welcome">{{ g.user.username }}</span>
-		{% else %}
-			<a class="nav-link {% if request.path.startswith('/login') %}active{% endif %}" href="{{ url_for('login') }}">Login</a>
-			<a class="nav-link primary {% if request.path.startswith('/register') %}active{% endif %}" href="{{ url_for('register') }}">Register</a>
-		{% endif %}
-	</nav>
+    <div class="background-animation"></div>
+    
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="logo">
+                    <div class="logo-icon">⚡</div>
+                    <span class="logo-text">CodeCraft</span>
+                </div>
+            </div>
+            <div class="nav-menu">
+                {% if g.user %}
+                    <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
+                    <a href="{{ url_for('logout') }}" class="nav-link">Logout</a>
+                {% else %}
+                    <a href="{{ url_for('login') }}" class="nav-link">Login</a>
+                    <a href="{{ url_for('register') }}" class="nav-link">Register</a>
+                {% endif %}
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()">
+                <span class="theme-icon">🌙</span>
+            </button>
+        </div>
+    </nav>
 
-	<main class="container">
-		{% with messages = get_flashed_messages(with_categories=true) %}
-			{% if messages %}
-				<ul class="flashes">
-				{% for category, message in messages %}
-					<li class="flash {{ category }}">{{ message }}</li>
-				{% endfor %}
-				</ul>
-			{% endif %}
-		{% endwith %}
+    <main class="main-content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </main>
 
-		{% block content %}{% endblock %}
-	</main>
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <div class="logo">
+                    <div class="logo-icon">⚡</div>
+                    <span class="logo-text">CodeCraft</span>
+                </div>
+                <p class="footer-tagline">AI-Powered Code Intelligence</p>
+            </div>
+            <div class="footer-links">
+                <span>&copy; 2024 CodeCraft. All rights reserved.</span>
+            </div>
+        </div>
+    </footer>
 
-	<footer class="footer">© {{ 2025 }} CodecRaft · <a href="{{ url_for('index') }}">Home</a></footer>
-	<script>
-	(function(){
-		var key = 'cc-theme';
-		var btn = document.getElementById('theme-toggle');
-		function apply(theme){
-			if(theme === 'light'){
-				document.documentElement.classList.add('theme-light');
-				if(btn) btn.textContent = 'Dark Mode';
-			}else{
-				document.documentElement.classList.remove('theme-light');
-				if(btn) btn.textContent = 'Light Mode';
-			}
-		}
-		var stored = localStorage.getItem(key) || 'dark';
-		apply(stored);
-		if(btn){
-			btn.addEventListener('click', function(){
-				var cur = localStorage.getItem(key) || 'dark';
-				var next = cur === 'light' ? 'dark' : 'light';
-				localStorage.setItem(key, next);
-				apply(next);
-			});
-		}
-	})();
-	</script>
+    <script>
+        function toggleTheme() {
+            document.body.classList.toggle('theme-light');
+            const themeIcon = document.querySelector('.theme-icon');
+            if (document.body.classList.contains('theme-light')) {
+                themeIcon.textContent = '☀️';
+                localStorage.setItem('theme', 'light');
+            } else {
+                themeIcon.textContent = '🌙';
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        // Load saved theme
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'light') {
+                document.body.classList.add('theme-light');
+                document.querySelector('.theme-icon').textContent = '☀️';
+            }
+        });
+    </script>
 </body>
 </html> 
