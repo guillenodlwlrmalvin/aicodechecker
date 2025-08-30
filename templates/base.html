@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>CodeCrft — AI Code Origin Detector</title>
+	<meta name="description" content="CodecRaft detects whether code snippets are AI-generated or human-written using heuristics and your local LM Studio model." />
+	<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+	<nav class="navbar">
+		<a class="brand" href="{{ url_for('index') }}">CodeCraft</a>
+		<div class="spacer"></div>
+		<button id="theme-toggle" class="button" type="button">Light Mode</button>
+		{% if g.user %}
+			<a class="nav-link {% if request.path.startswith('/dashboard') %}active{% endif %}" href="{{ url_for('dashboard') }}">Dashboard</a>
+			<a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+			<span class="welcome">{{ g.user.username }}</span>
+		{% else %}
+			<a class="nav-link {% if request.path.startswith('/login') %}active{% endif %}" href="{{ url_for('login') }}">Login</a>
+			<a class="nav-link primary {% if request.path.startswith('/register') %}active{% endif %}" href="{{ url_for('register') }}">Register</a>
+		{% endif %}
+	</nav>
+
+	<main class="container">
+		{% with messages = get_flashed_messages(with_categories=true) %}
+			{% if messages %}
+				<ul class="flashes">
+				{% for category, message in messages %}
+					<li class="flash {{ category }}">{{ message }}</li>
+				{% endfor %}
+				</ul>
+			{% endif %}
+		{% endwith %}
+
+		{% block content %}{% endblock %}
+	</main>
+
+	<footer class="footer">© {{ 2025 }} CodecRaft · <a href="{{ url_for('index') }}">Home</a></footer>
+	<script>
+	(function(){
+		var key = 'cc-theme';
+		var btn = document.getElementById('theme-toggle');
+		function apply(theme){
+			if(theme === 'light'){
+				document.documentElement.classList.add('theme-light');
+				if(btn) btn.textContent = 'Dark Mode';
+			}else{
+				document.documentElement.classList.remove('theme-light');
+				if(btn) btn.textContent = 'Light Mode';
+			}
+		}
+		var stored = localStorage.getItem(key) || 'dark';
+		apply(stored);
+		if(btn){
+			btn.addEventListener('click', function(){
+				var cur = localStorage.getItem(key) || 'dark';
+				var next = cur === 'light' ? 'dark' : 'light';
+				localStorage.setItem(key, next);
+				apply(next);
+			});
+		}
+	})();
+	</script>
+</body>
+</html> 

@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block content %}
+	<section class="hero hero-home">
+		<h1 class="hero-title">Detect AI‑generated vs Human‑written Code</h1>
+		<p class="subtitle">CodecRaft analyzes your snippets using smart heuristics and your local LM Studio model for an explainable verdict.</p>
+		<p class="hero-ctas">
+			<a class="button primary" href="{{ url_for('register') }}">Create a free account</a>
+			<a class="button" href="{{ url_for('login') }}">Sign in</a>
+		</p>
+	</section>
+
+	<section class="feature-grid">
+		<div class="card">
+			<h3>Hybrid Detection</h3>
+			<p>Combines lightweight rules with your own CodeBERT model via LM Studio to improve confidence.</p>
+		</div>
+		<div class="card">
+			<h3>Explainable</h3>
+			<p>See the signals behind each decision: comments, naming styles, repetition, formatting, and more.</p>
+		</div>
+		<div class="card">
+			<h3>Private & Local</h3>
+			<p>Your code never leaves your machine—analysis runs on your local server.</p>
+		</div>
+	</section>
+
+	<section class="how-it-works">
+		<h2>How it works</h2>
+		<ol class="steps">
+			<li><strong>Register</strong> or <strong>log in</strong>.</li>
+			<li>Open <strong>Dashboard</strong> and paste your code.</li>
+			<li>Click <strong>Analyze</strong> to get a percentage and explanation.</li>
+		</ol>
+		<p>
+			{% if g.user %}
+				<a class="button primary" href="{{ url_for('dashboard') }}">Go to Dashboard</a>
+			{% else %}
+				<a class="button primary" href="{{ url_for('login') }}">Go to Dashboard</a>
+			{% endif %}
+		</p>
+	</section>
+{% endblock %} 

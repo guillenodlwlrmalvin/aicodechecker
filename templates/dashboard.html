@@ -1,0 +1,237 @@
+{% extends 'base.html' %}
+{% block content %}
+	<h2>Code Detector</h2>
+	<section class="dash-grid">
+		<nav class="dash-side">
+			<ul class="side-menu">
+				<li><a id="tab-code" class="side-link active" href="#code-section">Code</a></li>
+				<li><a id="tab-history" class="side-link" href="#history-section">History</a></li>
+			</ul>
+		</nav>
+		<div class="dash-main">
+			<section id="code-section" class="card">
+				<h2>Code Analysis</h2>
+				<form id="analyze-form" method="POST" action="{{ url_for('detect') }}" class="form">
+					<label>
+						<span>Programming Language:</span>
+						<select id="language-input" name="language" required>
+							<option value="">Select Language</option>
+							<option value="auto" {% if language == 'auto' %}selected{% endif %}>Auto Detect</option>
+							<option value="python" {% if language == 'python' %}selected{% endif %}>Python</option>
+							<option value="java" {% if language == 'java' %}selected{% endif %}>Java</option>
+							<option value="csharp" {% if language == 'csharp' %}selected{% endif %}>C#</option>
+							<option value="cpp" {% if language == 'cpp' %}selected{% endif %}>C++</option>
+						</select>
+					</label>
+					<label>
+						<span>Paste your code</span>
+						<textarea id="code-input" name="code" rows="14" placeholder="Paste code here...">{{ code_input or '' }}</textarea>
+					</label>
+					<div class="actions">
+						<button id="analyze-btn" class="button primary" type="submit">Analyze</button>
+						<button id="clear-btn" class="button" type="button">Clear</button>
+						<span id="analyze-hint" class="muted">Paste code to enable</span>
+						{% if detected_language %}
+							<span id="detected-badge" class="badge" title="Auto-detected language">Detected: {{ detected_language }}{% if detected_source %} ({{ detected_source }}){% endif %}</span>
+						{% else %}
+							<span id="detected-badge" class="badge hidden"></span>
+						{% endif %}
+					</div>
+				</form>
+			</section>
+
+			{% if history %}
+			<section id="history-section" class="card hidden">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+					<h3 style="margin: 0;">Recent Analyses</h3>
+					<form method="POST" action="{{ url_for('clear_history') }}" style="margin: 0;">
+						<button type="submit" class="button" onclick="return confirm('Are you sure you want to clear all analysis history? This action cannot be undone.')">Clear History</button>
+					</form>
+				</div>
+				<ul class="history">
+				{% for h in history %}
+					<li class="history-item">
+						<div class="history-head">
+							<span class="muted">{{ h.language or 'auto' }} • {{ h.created_at }}</span>
+						</div>
+						<pre class="history-code">{{ (h.code or '')[:240] }}{% if (h.code or '')|length > 240 %}…{% endif %}</pre>
+					</li>
+				{% endfor %}
+				</ul>
+			</section>
+			{% endif %}
+
+			<div class="dash-right" id="results-section">
+				{% if feedback %}
+				<div id="feedback-card" class="result-card feedback {% if feedback.kind == 'ai' %}is-ai{% elif feedback.kind == 'human' %}is-human{% else %}is-uncertain{% endif %}">
+					<h3>{{ feedback.title }}</h3>
+				</div>
+				{% else %}
+				<div id="feedback-card" class="result-card feedback hidden"></div>
+				{% endif %}
+
+				{% if result %}
+				<div id="heuristic-card" class="result-card">
+					<h3>Heuristic: {{ result.label }}</h3>
+					<p class="score">Score: {{ result.score }} / 100 ({{ result.score|int }}%)</p>
+					<details>
+						<summary>Details</summary>
+						<ul>
+							<li>Lines: {{ result.features.lines }}</li>
+							<li>Characters: {{ result.features.characters }}</li>
+							<li>Comments: {{ result.features.comments }} (ratio {{ result.features.comment_ratio }})</li>
+							<li>Naming (camel/snake/SCREAM): {{ result.features.naming_camel }}/{{ result.features.naming_snake }}/{{ result.features.naming_screaming }}</li>
+							<li>Identifiers: {{ result.features.identifier_count }}</li>
+							<li>Repetition: {{ result.features.repetition }}</li>
+							<li>Formatting consistency: {{ result.features.formatting_consistency }}</li>
+							<li>AI markers: {{ 'yes' if result.features.has_ai_markers else 'no' }}</li>
+							<li>Long docstring: {{ 'yes' if result.features.long_docstring else 'no' }}</li>
+						</ul>
+						<h4>Explanation</h4>
+						<ul>
+						{% for item in result.explanation %}
+							<li>{{ item }}</li>
+						{% endfor %}
+						</ul>
+					</details>
+				</div>
+				{% else %}
+				<div id="heuristic-card" class="result-card hidden"></div>
+				{% endif %}
+
+				{% if llm_result %}
+				<div id="llm-card" class="result-card">
+					<h3>Model (LM Studio): {{ llm_result.label }}</h3>
+					<p class="score">Score: {{ '%.1f'|format(llm_result.score) }} / 100 ({{ llm_result.score|round(0,'floor')|int }}%)</p>
+					<p class="muted">{{ llm_result.explanation }}</p>
+					<details>
+						<summary>Raw</summary>
+						<pre style="white-space:pre-wrap">{{ llm_result.raw or '' }}</pre>
+					</details>
+				</div>
+				{% else %}
+				<div id="llm-card" class="result-card hidden"></div>
+				{% endif %}
+			</div>
+		</div>
+	</section>
+	<script>
+	(function(){
+		const input = document.getElementById('code-input');
+		const lang = document.getElementById('language-input');
+		const btn = document.getElementById('analyze-btn');
+		const hint = document.getElementById('analyze-hint');
+		const clearBtn = document.getElementById('clear-btn');
+		const badge = document.getElementById('detected-badge');
+		const feedbackCard = document.getElementById('feedback-card');
+		const heuristicCard = document.getElementById('heuristic-card');
+		const llmCard = document.getElementById('llm-card');
+		const tabCode = document.getElementById('tab-code');
+		const tabHistory = document.getElementById('tab-history');
+		const codeSection = document.getElementById('code-section');
+		const historySection = document.getElementById('history-section');
+		const resultsSection = document.getElementById('results-section');
+
+
+		function validateLanguageMatch() {
+			if (!input || !lang) return true;
+			
+			const code = input.value.trim();
+			const selectedLang = lang.value;
+			
+			if (!code || selectedLang === '' || selectedLang === 'auto') return true;
+			
+			// Simple client-side validation patterns
+			const patterns = {
+				python: {
+					indicators: [/def\s+\w+\s*\(/, /import\s+/, /print\s*\(/, /class\s+\w+/],
+					nonIndicators: [/public\s+class/, /System\.out\.println/, /#include\s+</, /namespace\s+/, /Console\.WriteLine/]
+				},
+				java: {
+					indicators: [/public\s+class/, /System\.out\.println/, /package\s+/, /import\s+java\./],
+					nonIndicators: [/def\s+\w+\s*\(/, /import\s+/, /print\s*\(/, /#include\s+</, /namespace\s+/, /Console\.WriteLine/]
+				},
+				csharp: {
+					indicators: [/namespace\s+/, /using\s+/, /Console\.WriteLine/, /var\s+/, /string\s+/],
+					nonIndicators: [/def\s+\w+\s*\(/, /import\s+/, /print\s*\(/, /public\s+class/, /System\.out\.println/, /#include\s+</]
+				},
+				cpp: {
+					indicators: [/#include\s+</, /std::/, /cout\s*<</, /cin\s*>>/, /int\s+main\s*\(/],
+					nonIndicators: [/def\s+\w+\s*\(/, /import\s+/, /print\s*\(/, /public\s+class/, /System\.out\.println/, /namespace\s+/, /Console\.WriteLine/]
+				}
+			};
+			
+			const langPatterns = patterns[selectedLang];
+			if (!langPatterns) return true;
+			
+			const hasLangSyntax = langPatterns.indicators.some(pattern => pattern.test(code));
+			const hasOtherSyntax = langPatterns.nonIndicators.some(pattern => pattern.test(code));
+			
+			if (hasOtherSyntax && !hasLangSyntax) {
+				// Show error message
+				const errorMsg = `This code doesn't appear to be ${selectedLang.toUpperCase()} code. Please select the correct language or use "Auto Detect".`;
+				if (hint) {
+					hint.textContent = errorMsg;
+					hint.style.color = '#ef4444';
+					hint.style.display = 'inline-block';
+				}
+				return false;
+			}
+			
+			// Clear error message if validation passes
+			if (hint) {
+				hint.textContent = 'Paste code to enable';
+				hint.style.color = '';
+				hint.style.display = 'inline-block';
+			}
+			return true;
+		}
+		
+		function update(){
+			const has = input && input.value.trim().length > 0;
+			const isValid = validateLanguageMatch();
+			if(btn){ 
+				btn.disabled = !has || !isValid; 
+				btn.classList.toggle('disabled', !has || !isValid); 
+			}
+			if(hint && !has){ hint.style.display = 'inline-block'; hint.textContent = 'Paste code to enable'; hint.style.color = ''; }
+		}
+		function activate(tab){
+			if(!tabCode || !tabHistory || !codeSection){ return; }
+			if(tab === 'history' && historySection){
+				codeSection.classList.add('hidden');
+				historySection.classList.remove('hidden');
+				if(resultsSection){ resultsSection.classList.add('hidden'); }
+				tabHistory.classList.add('active');
+				tabCode.classList.remove('active');
+				historySection.scrollIntoView({behavior:'smooth', block:'start'});
+			}else{
+				codeSection.classList.remove('hidden');
+				if(historySection){ historySection.classList.add('hidden'); }
+				if(resultsSection){ resultsSection.classList.remove('hidden'); }
+				tabCode.classList.add('active');
+				tabHistory.classList.remove('active');
+				codeSection.scrollIntoView({behavior:'smooth', block:'start'});
+			}
+		}
+		if(tabCode){ tabCode.addEventListener('click', function(e){ e.preventDefault(); activate('code'); }); }
+		if(tabHistory){ tabHistory.addEventListener('click', function(e){ e.preventDefault(); activate('history'); }); }
+
+		if(input){ input.addEventListener('input', update); }
+		if(lang){ lang.addEventListener('change', update); }
+		if(clearBtn){
+			clearBtn.addEventListener('click', function(){
+				if(input){ input.value = ''; }
+				if(lang){ lang.value = ''; }
+				if(badge){ badge.classList.add('hidden'); badge.textContent = ''; }
+				if(feedbackCard){ feedbackCard.classList.add('hidden'); feedbackCard.innerHTML = ''; }
+				if(heuristicCard){ heuristicCard.classList.add('hidden'); heuristicCard.innerHTML = ''; }
+				if(llmCard){ llmCard.classList.add('hidden'); llmCard.innerHTML = ''; }
+				update();
+			});
+		}
+
+		update();
+	})();
+	</script>
+{% endblock %} 
