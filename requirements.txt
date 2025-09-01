@@ -1,3 +1,5 @@
+setuptools>=68.0.0
+wheel>=0.41.0
 Flask==3.0.3
 Werkzeug==3.0.3
 Jinja2==3.1.4
