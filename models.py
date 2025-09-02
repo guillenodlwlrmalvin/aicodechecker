@@ -13,25 +13,6 @@ def _connect(db_path: str) -> sqlite3.Connection:
 def initialize_database(db_path: str) -> None:
     conn = _connect(db_path)
     try:
-        # Create tables if missing
-        conn.execute("""CREATE TABLE IF NOT EXISTS users (...)""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS uploaded_files (...)""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS analyses (...)""")
-
-        # Migration: ensure file_id exists in analyses
-        cur = conn.execute("PRAGMA table_info(analyses)")
-        columns = [row["name"] for row in cur.fetchall()]
-        if "file_id" not in columns:
-            conn.execute("ALTER TABLE analyses ADD COLUMN file_id INTEGER;")
-
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def initialize_database(db_path: str) -> None:
-    conn = _connect(db_path)
-    try:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
