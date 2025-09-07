@@ -19,7 +19,9 @@ def initialize_database(db_path: str) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                is_admin INTEGER NOT NULL DEFAULT 0,
+                is_approved INTEGER NOT NULL DEFAULT 0
             )
             """
         )
@@ -56,6 +58,13 @@ def initialize_database(db_path: str) -> None:
             )
             """
         )
+        # Migration: ensure is_admin and is_approved columns exist on users
+        cols = conn.execute("PRAGMA table_info(users)").fetchall()
+        col_names = {c[1] for c in cols}
+        if 'is_admin' not in col_names:
+            conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        if 'is_approved' not in col_names:
+            conn.execute("ALTER TABLE users ADD COLUMN is_approved INTEGER NOT NULL DEFAULT 0")
         conn.commit()
     finally:
         conn.close()
@@ -71,12 +80,37 @@ def get_user_by_username(db_path: str, username: str) -> Optional[Dict[str, Any]
         conn.close()
 
 
-def create_user(db_path: str, username: str, password_hash: str) -> int:
+def get_user_by_id(db_path: str, user_id: int) -> Optional[Dict[str, Any]]:
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_user_count(db_path: str) -> int:
+    conn = _connect(db_path)
+    try:
+        row = conn.execute("SELECT COUNT(1) as c FROM users").fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        conn.close()
+
+
+def create_user(db_path: str, username: str, password_hash: str, is_admin: bool = False, is_approved: bool = False) -> int:
     conn = _connect(db_path)
     try:
         cur = conn.execute(
-            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-            (username, password_hash, datetime.utcnow().isoformat()),
+            "INSERT INTO users (username, password_hash, created_at, is_admin, is_approved) VALUES (?, ?, ?, ?, ?)",
+            (
+                username,
+                password_hash,
+                datetime.utcnow().isoformat(),
+                1 if is_admin else 0,
+                1 if is_approved else 0,
+            ),
         )
         conn.commit()
         return cur.lastrowid
@@ -171,5 +205,37 @@ def get_recent_analyses(db_path: str, user_id: int, limit: int = 10) -> List[Dic
         )
         rows = cur.fetchall()
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def list_all_users(db_path: str) -> List[Dict[str, Any]]:
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute(
+            "SELECT id, username, created_at, is_admin, is_approved FROM users ORDER BY created_at DESC"
+        )
+        rows = cur.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def delete_user_and_related(db_path: str, user_id: int) -> None:
+    conn = _connect(db_path)
+    try:
+        conn.execute("DELETE FROM analyses WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM uploaded_files WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def approve_user(db_path: str, user_id: int) -> None:
+    conn = _connect(db_path)
+    try:
+        conn.execute("UPDATE users SET is_approved = 1 WHERE id = ?", (user_id,))
+        conn.commit()
     finally:
         conn.close() 

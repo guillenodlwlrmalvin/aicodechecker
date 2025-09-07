@@ -6,7 +6,7 @@ import time
 DEFAULT_LM_BASE_URL = os.environ.get('LM_STUDIO_BASE_URL', 'http://localhost:1234/v1')
 DEFAULT_MODEL = os.environ.get(
     'LM_STUDIO_MODEL',
-    'TheBloke/CodeLlama-7B-Instruct-GGUF/codellama-7b-instruct.Q4_K_S.gguf'
+    'TheBloke/CodeLlama-13B-Instruct-GGUF/codellama-13b-instruct.Q8_0.gguf'
 )
 TIMEOUT_SECONDS = float(os.environ.get('LM_STUDIO_TIMEOUT', '60'))
 MAX_RETRIES = int(os.environ.get('LM_STUDIO_MAX_RETRIES', '6'))

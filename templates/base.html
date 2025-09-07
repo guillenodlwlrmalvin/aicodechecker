@@ -21,6 +21,9 @@
             <div class="nav-menu">
                 {% if g.user %}
                     <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
+                    {% if g.user.is_admin or g.user['is_admin'] %}
+                        <a href="{{ url_for('admin_dashboard') }}" class="nav-link">Admin</a>
+                    {% endif %}
                     <a href="{{ url_for('logout') }}" class="nav-link">Logout</a>
                 {% else %}
                     <a href="{{ url_for('login') }}" class="nav-link">Login</a>

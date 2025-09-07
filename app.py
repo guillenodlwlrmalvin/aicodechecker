@@ -4,6 +4,8 @@ from flask import Flask, render_template, request, redirect, url_for, flash, g, 
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from models import initialize_database, get_user_by_username, create_user, create_analysis, get_recent_analyses, create_uploaded_file, get_uploaded_files
+from models import list_all_users, delete_user_and_related, get_user_count
+from models import approve_user
 from detector import analyze_code
 from code_check import check_code, validate_language_match
 from lm_client import classify_with_lmstudio, detect_language_with_lmstudio
@@ -47,11 +49,43 @@ def get_language_from_extension(filename):
 # Initialize database
 initialize_database(app.config['DATABASE'])
 
+# Seed or fix default admin account (approved)
+try:
+    _existing_admin = get_user_by_username(app.config['DATABASE'], 'Admin')
+    if not _existing_admin:
+        create_user(app.config['DATABASE'], 'Admin', generate_password_hash('Admin123'), is_admin=True, is_approved=True)
+    else:
+        # Ensure Admin account is approved, has admin role, and known password
+        conn = sqlite3.connect(app.config['DATABASE'])
+        conn.execute(
+            "UPDATE users SET is_admin = 1, is_approved = 1, password_hash = ? WHERE username = 'Admin'",
+            (generate_password_hash('Admin123'),)
+        )
+        conn.commit()
+        conn.close()
+except Exception:
+    pass
+
 @app.before_request
 def load_logged_in_user():
     g.user = None
     if 'user_id' in session:
         g.user = get_user_by_username(app.config['DATABASE'], session['user_id'])
+
+# Admin utilities
+from functools import wraps
+
+def admin_required(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        if not g.user:
+            flash('Please log in to continue.', 'warning')
+            return redirect(url_for('login'))
+        if not g.user.get('is_admin'):
+            flash('Admin access required.', 'error')
+            return redirect(url_for('dashboard'))
+        return view_func(*args, **kwargs)
+    return wrapped
 
 @app.route('/')
 def index():
@@ -67,8 +101,19 @@ def register():
             flash('Please fill in all fields.', 'error')
         else:
             try:
-                create_user(app.config['DATABASE'], username, generate_password_hash(password))
-                flash('Registration successful! Please log in.', 'success')
+                # First user becomes admin automatically and approved
+                is_first_user = get_user_count(app.config['DATABASE']) == 0
+                create_user(
+                    app.config['DATABASE'],
+                    username,
+                    generate_password_hash(password),
+                    is_admin=is_first_user,
+                    is_approved=is_first_user,
+                )
+                if is_first_user:
+                    flash('Registration successful! Your account has admin privileges and is approved.', 'success')
+                else:
+                    flash('Registration successful! Awaiting admin approval.', 'info')
                 return redirect(url_for('login'))
             except Exception as e:
                 flash(f'Registration failed: {str(e)}', 'error')
@@ -83,6 +128,9 @@ def login():
         
         user = get_user_by_username(app.config['DATABASE'], username)
         if user and check_password_hash(user['password_hash'], password):
+            if not user.get('is_approved'):
+                flash('Your account is pending approval by an admin.', 'warning')
+                return redirect(url_for('login'))
             session['user_id'] = username
             flash('Login successful!', 'success')
             return redirect(url_for('dashboard'))
@@ -106,6 +154,52 @@ def dashboard():
     history = get_recent_analyses(app.config['DATABASE'], g.user['id'], limit=10)
     uploaded_files = get_uploaded_files(app.config['DATABASE'], g.user['id'], limit=20)
     return render_template('dashboard.html', history=history, uploaded_files=uploaded_files)
+
+# Admin routes
+@app.route('/admin')
+@admin_required
+def admin_dashboard():
+    users = list_all_users(app.config['DATABASE'])
+    return render_template('admin.html', users=users)
+
+@app.route('/admin/approve_user/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_approve_user(user_id: int):
+    try:
+        approve_user(app.config['DATABASE'], user_id)
+        flash('User approved successfully.', 'success')
+    except Exception as e:
+        flash(f'Failed to approve user: {str(e)}', 'error')
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/delete_user/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_delete_user(user_id: int):
+    if g.user and g.user['id'] == user_id:
+        flash('You cannot delete your own admin account.', 'error')
+        return redirect(url_for('admin_dashboard'))
+    try:
+        delete_user_and_related(app.config['DATABASE'], user_id)
+        flash('User deleted successfully.', 'success')
+    except Exception as e:
+        flash(f'Failed to delete user: {str(e)}', 'error')
+    return redirect(url_for('admin_dashboard'))
+
+# Delete a single history item
+@app.route('/remove_history/<int:analysis_id>', methods=['POST'])
+def remove_history(analysis_id: int):
+    if not g.user:
+        return jsonify({'success': False, 'message': 'Please log in to continue.'}), 401
+    try:
+        conn = sqlite3.connect(app.config['DATABASE'])
+        cur = conn.execute("DELETE FROM analyses WHERE id = ? AND user_id = ?", (analysis_id, g.user['id']))
+        conn.commit()
+        conn.close()
+        if cur.rowcount == 0:
+            return jsonify({'success': False, 'message': 'Analysis not found.'}), 404
+        return jsonify({'success': True, 'message': 'History item removed.'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error removing history: {str(e)}'}), 500
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -206,7 +300,7 @@ def detect():
                     feedback = { 'title': f"Uncertain ({int(score)}%)", 'kind': 'uncertain', 'source': 'Deep Learning' }
             
             # Fallback to LLM if Deep Learning fails
-            elif llm_result and llm_result.get('label') and 'Unavailable' not in llm_result['label']:
+            elif llm_result and llm_result.get('label') and 'Unavailable' not in llm_result.get('label'):
                 score = float(llm_result.get('score', 50.0))
                 if 'AI' in llm_result['label'].upper():
                     feedback = { 'title': f"AI-generated ({int(score)}%)", 'kind': 'ai', 'source': 'AI Model' }

@@ -86,7 +86,7 @@
 								<span class="file-meta">{{ file.file_type }} • {{ (file.file_size / 1024)|round(1) }} KB • {{ file.created_at }}</span>
 							</div>
 							<div class="file-actions">
-								<button class="button small" data-content="{{ file.content|replace('\n', '\\n')|replace('\'', '\\\'') }}" data-type="{{ file.file_type }}" onclick="loadFileContent(this)">Load</button>
+								<button class="button small" data-content="{{ file.content|replace('\n', '\\n')|replace("'", "\\'") }}" data-type="{{ file.file_type }}" onclick="loadFileContent(this)">Load</button>
 								<button class="button small danger" data-file-id="{{ file.id }}" data-file-name="{{ file.original_filename }}" onclick="removeFile(this)">Remove</button>
 							</div>
 						</li>
@@ -106,7 +106,7 @@
 				{% if history %}
 				<ul class="history">
 				{% for h in history %}
-					<li class="history-item">
+					<li class="history-item" id="history-item-{{ h.id }}">
 						<div class="history-head">
 							<span class="muted">{{ h.language or 'auto' }} • {{ h.created_at }}</span>
 							{% if h.original_filename %}
@@ -114,6 +114,9 @@
 							{% endif %}
 						</div>
 						<pre class="history-code">{{ (h.code or '')[:240] }}{% if (h.code or '')|length > 240 %}…{% endif %}</pre>
+						<div class="file-actions">
+							<button class="button small danger" data-analysis-id="{{ h.id }}" onclick="removeHistory(this.getAttribute('data-analysis-id'))">Remove</button>
+						</div>
 					</li>
 				{% endfor %}
 				</ul>
@@ -124,46 +127,6 @@
 		</div>
 
 		<div class="dash-right" id="results-section">
-			{% if feedback %}
-			<div id="feedback-card" class="result-card feedback {% if feedback.kind == 'ai' %}is-ai{% elif feedback.kind == 'human' %}is-human{% else %}is-uncertain{% endif %}">
-				<h3>{{ feedback.title }}</h3>
-				{% if feedback.source %}
-				<p class="analysis-source">Analysis Source: <span class="source-badge">{{ feedback.source }}</span></p>
-				{% endif %}
-			</div>
-			{% else %}
-			<div id="feedback-card" class="result-card feedback hidden"></div>
-			{% endif %}
-
-			{% if result %}
-			<div id="heuristic-card" class="result-card">
-				<h3>Heuristic Analysis</h3>
-				<p class="score">Score: {{ result.score }} / 100 ({{ result.score|int }}%)</p>
-				<details>
-					<summary>Details</summary>
-					<ul>
-						<li>Lines: {{ result.features.lines }}</li>
-						<li>Characters: {{ result.features.characters }}</li>
-						<li>Comments: {{ result.features.comments }} (ratio {{ result.features.comment_ratio }})</li>
-						<li>Naming (camel/snake/SCREAM): {{ result.features.naming_camel }}/{{ result.features.naming_snake }}/{{ result.features.naming_screaming }}</li>
-						<li>Identifiers: {{ result.features.identifier_count }}</li>
-						<li>Repetition: {{ result.features.repetition }}</li>
-						<li>Formatting consistency: {{ result.features.formatting_consistency }}</li>
-						<li>AI markers: {{ 'yes' if result.features.has_ai_markers else 'no' }}</li>
-						<li>Long docstring: {{ 'yes' if result.features.long_docstring else 'no' }}</li>
-					</ul>
-					<h4>Explanation</h4>
-					<ul>
-					{% for item in result.explanation %}
-						<li>{{ item }}</li>
-					{% endfor %}
-					</ul>
-				</details>
-			</div>
-			{% else %}
-			<div id="heuristic-card" class="result-card hidden"></div>
-			{% endif %}
-
 			{% if llm_result and llm_result.get('label') and 'Unavailable' not in llm_result.get('label', '') %}
 			<div id="llm-card" class="result-card">
 				<h3>AI Model Analysis</h3>
@@ -344,6 +307,35 @@
 					showMessage('Error removing file: ' + error.message, 'error');
 				});
 			}
+		}
+
+		// Remove history function
+		function removeHistory(analysisId) {
+			if (!confirm('Remove this history item? This action cannot be undone.')) {
+				return;
+			}
+			fetch('/remove_history/' + analysisId, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+			})
+			.then(response => response.json())
+			.then(data => {
+				if (data.success) {
+					const item = document.getElementById('history-item-' + analysisId);
+					if (item) {
+						item.remove();
+					}
+					showMessage('History item removed.', 'success');
+				} else {
+					showMessage('Error removing history: ' + data.message, 'error');
+				}
+			})
+			.catch(error => {
+				console.error('Error removing history:', error);
+				showMessage('Error removing history: ' + error.message, 'error');
+			});
 		}
 
 		// Show message function
