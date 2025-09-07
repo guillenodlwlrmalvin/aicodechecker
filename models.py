@@ -58,7 +58,7 @@ def initialize_database(db_path: str) -> None:
             )
             """
         )
-        # Migration: ensure is_admin and is_approved columns exist on users
+        # Migration: ensure columns exist
         cols = conn.execute("PRAGMA table_info(users)").fetchall()
         col_names = {c[1] for c in cols}
         if 'is_admin' not in col_names:
@@ -118,7 +118,7 @@ def create_user(db_path: str, username: str, password_hash: str, is_admin: bool 
         conn.close()
 
 
-def create_uploaded_file(db_path: str, user_id: int, filename: str, original_filename: str, 
+def create_uploaded_file(db_path: str, user_id: int, filename: str, original_filename: str,
                         file_size: int, file_type: str, content: str) -> int:
     conn = _connect(db_path)
     try:
@@ -148,9 +148,9 @@ def get_uploaded_files(db_path: str, user_id: int, limit: int = 20) -> List[Dict
     try:
         cur = conn.execute(
             """
-            SELECT * FROM uploaded_files 
-            WHERE user_id = ? 
-            ORDER BY created_at DESC 
+            SELECT * FROM uploaded_files
+            WHERE user_id = ?
+            ORDER BY created_at DESC
             LIMIT ?
             """,
             (user_id, limit)
@@ -194,11 +194,11 @@ def get_recent_analyses(db_path: str, user_id: int, limit: int = 10) -> List[Dic
     try:
         cur = conn.execute(
             """
-            SELECT a.*, uf.original_filename 
-            FROM analyses a 
+            SELECT a.*, uf.original_filename
+            FROM analyses a
             LEFT JOIN uploaded_files uf ON a.file_id = uf.id
-            WHERE a.user_id = ? 
-            ORDER BY a.created_at DESC 
+            WHERE a.user_id = ?
+            ORDER BY a.created_at DESC
             LIMIT ?
             """,
             (user_id, limit)
@@ -238,4 +238,4 @@ def approve_user(db_path: str, user_id: int) -> None:
         conn.execute("UPDATE users SET is_approved = 1 WHERE id = ?", (user_id,))
         conn.commit()
     finally:
-        conn.close() 
+        conn.close()
