@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% block title %}CodeCraft - AI-Powered Code Intelligence{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="hero-content">
+        <div class="hero-text">
+            <h1 class="hero-title">
+                <span class="gradient-text">CodeCraft</span>
+                <br>AI-Powered Code Intelligence
+            </h1>
+            <p class="hero-description">
+                Detect AI-generated vs human-written code with advanced machine learning. 
+                Upload files, analyze code patterns, and get instant insights using your local AI models.
+            </p>
+            <div class="hero-actions">
+                {% if g.user %}
+                    <a href="{{ url_for('dashboard') }}" class="button primary hero-button">
+                        <span>Go to Dashboard</span>
+                        <span class="button-icon">→</span>
+                    </a>
+                {% else %}
+                    <a href="{{ url_for('register') }}" class="button primary hero-button">
+                        <span>Get Started</span>
+                        <span class="button-icon">→</span>
+                    </a>
+                    <a href="{{ url_for('login') }}" class="button secondary hero-button">
+                        <span>Sign In</span>
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="hero-visual">
+            <div class="code-preview">
+                <div class="code-header">
+                    <div class="code-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <span class="code-filename">analysis.py</span>
+                </div>
+                <div class="code-content">
+                    <pre><code>def analyze_code(code):
+    # AI-powered detection
+    features = extract_features(code)
+    score = calculate_score(features)
+    
+    if score > 0.8:
+        return "AI-Generated"
+    else:
+        return "Human-Written"</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<section class="features-section">
+    <div class="container">
+        <h2 class="section-title">Advanced Code Intelligence</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <h3>AI Detection</h3>
+                <p>Advanced machine learning models detect AI-generated code with high accuracy using pattern recognition and semantic analysis.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📁</div>
+                <h3>File Upload</h3>
+                <p>Upload code files directly and get instant analysis. Supports 15+ programming languages with automatic detection.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔍</div>
+                <h3>Deep Analysis</h3>
+                <p>Comprehensive code analysis including syntax checking, language detection, and detailed feature extraction.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>Smart Insights</h3>
+                <p>Get detailed scores, explanations, and confidence levels for every analysis with visual feedback.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="how-it-works">
+    <div class="container">
+        <h2 class="section-title">How It Works</h2>
+        <div class="steps-grid">
+            <div class="step">
+                <div class="step-number">1</div>
+                <h3>Upload Code</h3>
+                <p>Paste your code or upload files in any supported programming language.</p>
+            </div>
+            <div class="step">
+                <div class="step-number">2</div>
+                <h3>AI Analysis</h3>
+                <p>Our advanced models analyze code patterns, structure, and characteristics.</p>
+            </div>
+            <div class="step">
+                <div class="step-number">3</div>
+                <h3>Get Results</h3>
+                <p>Receive detailed insights with confidence scores and explanations.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="cta-section">
+    <div class="container">
+        <h2>Ready to Analyze Your Code?</h2>
+        <p>Join thousands of developers using CodeCraft for intelligent code analysis</p>
+        {% if g.user %}
+            <a href="{{ url_for('dashboard') }}" class="button primary">Go to Dashboard</a>
+        {% else %}
+            <a href="{{ url_for('register') }}" class="button primary">Start Free</a>
+        {% endif %}
+    </div>
+</section>
+{% endblock %} 
