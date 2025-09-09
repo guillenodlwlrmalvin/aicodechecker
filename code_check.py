@@ -81,25 +81,13 @@ def validate_language_match(code: str, selected_language: str) -> Tuple[bool, st
     
     # Language-specific validation rules
     if selected_language == 'python':
-<<<<<<< HEAD
-        # Python indicators
-        python_indicators = [
-            r'def\s+\w+\s*\(',  # function definitions
-            r'import\s+',       # import statements
-            r'from\s+\w+\s+import',  # from imports
-            r'class\s+\w+',     # class definitions
-            r'if\s+__name__\s*==\s*[\'"]__main__[\'"]',  # main guard
-            r'print\s*\(',      # print statements
-            r'return\s+',       # return statements
-=======
         # Prefer strong Python-only indicators (exclude ambiguous ones like 'class')
         strong_python_indicators = [
             r'def\s+\w+\s*\(',  # function definitions
             r'import\s+',       # import statements
             r'from\s+\w+\s+import',  # from imports
-            r'if\s+__name__\s*==\s*[\'\"]__main__[\'\"]',  # main guard
+            r'if\s+__name__\s*==\s*[\'"]__main__[\'"]',  # main guard
             r'print\s*\(',      # print statements
->>>>>>> test/unit-testing
             r'for\s+\w+\s+in',  # for loops
             r'while\s+',        # while loops
             r'elif\s+',         # elif statements
@@ -112,13 +100,8 @@ def validate_language_match(code: str, selected_language: str) -> Tuple[bool, st
             r'await\s+',        # await statements
         ]
         
-<<<<<<< HEAD
-        # Check for Python-specific syntax
-        has_python_syntax = any(re.search(pattern, code, re.IGNORECASE) for pattern in python_indicators)
-=======
         # Check for Python-specific syntax (strong)
         has_strong_python = any(re.search(pattern, code, re.IGNORECASE) for pattern in strong_python_indicators)
->>>>>>> test/unit-testing
         
         # Check for non-Python indicators
         non_python_indicators = [
@@ -142,14 +125,9 @@ def validate_language_match(code: str, selected_language: str) -> Tuple[bool, st
         ]
         
         has_non_python = any(re.search(pattern, code, re.IGNORECASE) for pattern in non_python_indicators)
-<<<<<<< HEAD
-        
-        if has_non_python and not has_python_syntax:
-=======
         has_braces_or_semicolons = bool(re.search(r'[{};]', code))
         
         if (has_non_python or has_braces_or_semicolons) and not has_strong_python:
->>>>>>> test/unit-testing
             return False, "This code appears to be written in a different programming language, not Python."
         
     elif selected_language == 'java':
@@ -305,4 +283,4 @@ def check_code(code: str, language_hint: str = 'auto') -> Dict[str, Any]:
         'language': lang,
         'ok': bool(ok and not errors),
         'errors': errors,
-    } 
+    }
