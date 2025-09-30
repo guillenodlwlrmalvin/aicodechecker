@@ -21,7 +21,8 @@ def initialize_database(db_path: str) -> None:
                 password_hash TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 is_admin INTEGER NOT NULL DEFAULT 0,
-                is_approved INTEGER NOT NULL DEFAULT 0
+                is_approved INTEGER NOT NULL DEFAULT 0,
+                reset_requested INTEGER NOT NULL DEFAULT 0
             )
             """
         )
@@ -65,6 +66,8 @@ def initialize_database(db_path: str) -> None:
             conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
         if 'is_approved' not in col_names:
             conn.execute("ALTER TABLE users ADD COLUMN is_approved INTEGER NOT NULL DEFAULT 0")
+        if 'reset_requested' not in col_names:
+            conn.execute("ALTER TABLE users ADD COLUMN reset_requested INTEGER NOT NULL DEFAULT 0")
         conn.commit()
     finally:
         conn.close()
@@ -213,7 +216,7 @@ def list_all_users(db_path: str) -> List[Dict[str, Any]]:
     conn = _connect(db_path)
     try:
         cur = conn.execute(
-            "SELECT id, username, created_at, is_admin, is_approved FROM users ORDER BY created_at DESC"
+            "SELECT id, username, created_at, is_admin, is_approved, reset_requested FROM users ORDER BY created_at DESC"
         )
         rows = cur.fetchall()
         return [dict(row) for row in rows]

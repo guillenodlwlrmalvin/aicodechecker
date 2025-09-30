@@ -128,11 +128,11 @@
 
 		<div class="dash-right" id="results-section">
 			{% if llm_result and llm_result.get('label') and 'Unavailable' not in llm_result.get('label', '') %}
-			<div id="llm-card" class="result-card">
+			<div id="llm-card" class="result-card feedback {% if 'AI' in llm_result.label %}is-ai{% elif 'Human' in llm_result.label %}is-human{% else %}is-uncertain{% endif %}">
 				<h3>AI Model Analysis</h3>
-				<p class="score">Score: {{ llm_result.score }} / 100 ({{ llm_result.score|int }}%)</p>
+				<p class="score">Score: {{ '%.1f'|format(llm_result.score) }} / 100 ({{ llm_result.score|int }}%) — {{ llm_result.label }}</p>
 				{% if llm_result.get('explanation') %}
-				<details>
+				<details open>
 					<summary>AI Explanation</summary>
 					<p>{{ llm_result.explanation }}</p>
 				</details>
@@ -140,6 +140,17 @@
 			</div>
 			{% else %}
 			<div id="llm-card" class="result-card hidden"></div>
+			{% endif %}
+
+			{% if why_human_reasons and why_human_reasons|length > 0 %}
+			<div id="why-human-card" class="result-card">
+				<h3>Why Human</h3>
+				<ul style="margin: 8px 0 0 18px;">
+					{% for reason in why_human_reasons %}
+					<li>{{ reason }}</li>
+					{% endfor %}
+				</ul>
+			</div>
 			{% endif %}
 		</div>
 	</section>

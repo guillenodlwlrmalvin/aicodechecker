@@ -1,11 +1,12 @@
 import os
 import sqlite3
+import re
 from flask import Flask, render_template, request, redirect, url_for, flash, g, session, jsonify
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from models import initialize_database, get_user_by_username, create_user, create_analysis, get_recent_analyses, create_uploaded_file, get_uploaded_files
 from models import list_all_users, delete_user_and_related, get_user_count
-from models import approve_user
+from models import approve_user, get_user_by_id
 from detector import analyze_code
 from code_check import check_code, validate_language_match
 from lm_client import classify_with_lmstudio, detect_language_with_lmstudio
@@ -37,14 +38,19 @@ ALLOWED_EXTENSIONS = {
     'r': 'r',
     'm': 'matlab'
 }
+# Known languages vocabulary for normalizing LLM outputs
+KNOWN_LANGUAGES = set(ALLOWED_EXTENSIONS.values())
+
 
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
 def get_language_from_extension(filename):
     ext = filename.rsplit('.', 1)[1].lower()
     return ALLOWED_EXTENSIONS.get(ext, 'auto')
+
 
 # Initialize database
 initialize_database(app.config['DATABASE'])
@@ -271,8 +277,24 @@ def detect():
         detected_source = 'heuristic'
         lm_lang = detect_language_with_lmstudio(code)
         if lm_lang and lm_lang not in ('', 'unknown'):
-            detected_language = lm_lang
-            detected_source = 'llm'
+            # Normalize strange labels from LLM, e.g., typos or unknown names
+            lang_norm = re.sub(r'[^a-z\+\#]', '', (lm_lang or '').lower())
+            # Map common variants
+            aliases = {
+                'csharp': 'csharp', 'cs': 'csharp',
+                'cplusplus': 'cpp', 'c\+\+': 'cpp', 'cpp': 'cpp', 'c': 'cpp',
+                'js': 'javascript', 'node': 'javascript', 'javascript': 'javascript',
+                'ts': 'typescript', 'typescript': 'typescript',
+                'py': 'python', 'python': 'python',
+            }
+            lang_mapped = aliases.get(lang_norm, lang_norm)
+            if lang_mapped in KNOWN_LANGUAGES:
+                detected_language = lang_mapped
+                detected_source = 'llm'
+            else:
+                # Treat as unknown if not in our vocabulary
+                detected_language = 'unknown'
+                detected_source = 'llm'
         else:
             check = check_code(code, 'auto')
             detected_language = check.get('language') or 'unknown'
@@ -280,17 +302,39 @@ def detect():
         # Always use detected language
         language = detected_language
 
+        # Heuristic quick signals for non-code / weak code format
+        is_mostly_words = bool(re.search(r"[A-Za-z]{4,}\s+[A-Za-z]{4,}", code)) and not bool(re.search(r"\{|\}|;|=>|def\s|class\s|import\s|function\s|#|//|/\*", code))
+        too_short_for_language = len(code.splitlines()) <= 2 and len(code) < 30
+
+        # Force neutral outcome for non-programming-language inputs
+        force_neutral = str(language or '').strip().lower() in (
+            'unknown', 'none', 'text', 'plain text', 'not a programming language', 'not_a_language'
+        ) or is_mostly_words or too_short_for_language
+
         heuristic = analyze_code(code, language)
-        llm_result = classify_with_lmstudio(code, language)
+        llm_result = classify_with_lmstudio(code, language) if not force_neutral else {
+            'label': 'Uncertain (LLM)',
+            'score': 50.0,
+            'explanation': 'Language not identified or weak code structure; treating as not a programming language.',
+        }
         
         # Deep Learning Analysis
-        deep_learning_result = analyze_code_deep_learning(code, language)
-        
+        deep_learning_result = analyze_code_deep_learning(code, language) if not force_neutral else {
+            'label': 'Uncertain',
+            'score': 50.0,
+            'confidence': 0.5,
+            'explanation': 'Language not identified or weak code structure; neutral classification applied.'
+        }
+
         # Build feedback with priority: Deep Learning > LLM > Heuristic
         feedback = None
         try:
+            # If neutral is forced, short-circuit to Uncertain (50%)
+            if force_neutral:
+                score = 50.0
+                feedback = { 'title': f"Uncertain ({int(score)}%)", 'kind': 'uncertain', 'source': 'Language detection' }
             # Try Deep Learning first (most accurate)
-            if deep_learning_result and deep_learning_result.get('score') is not None:
+            elif deep_learning_result and deep_learning_result.get('score') is not None:
                 score = deep_learning_result['score']
                 if score > 75:
                     feedback = { 'title': f"AI-generated ({int(score)}%)", 'kind': 'ai', 'source': 'Deep Learning' }
@@ -341,7 +385,7 @@ def detect():
 
         history = get_recent_analyses(app.config['DATABASE'], g.user['id'], limit=10)
         uploaded_files = get_uploaded_files(app.config['DATABASE'], g.user['id'], limit=20)
-
+        
         return render_template(
             'dashboard.html',
             result=heuristic,
@@ -354,7 +398,7 @@ def detect():
             history=history,
             uploaded_files=uploaded_files,
         )
-                             
+                         
     except Exception as e:
         app.logger.error(f"Code analysis failed: {e}")
         flash('An error occurred during analysis. Please try again.', 'error')
@@ -414,5 +458,73 @@ def remove_uploaded_file(file_id):
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error removing file: {str(e)}'}), 500
 
+@app.route('/forgot_password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        
+        if not username:
+            flash('Please enter your username.', 'error')
+            return redirect(url_for('forgot_password'))
+        
+        # Check if user exists
+        user = get_user_by_username(app.config['DATABASE'], username)
+        if not user:
+            flash('Username not found.', 'error')
+            return redirect(url_for('forgot_password'))
+        
+        # Flag this user as requesting a reset
+        try:
+            conn = sqlite3.connect(app.config['DATABASE'])
+            conn.execute("UPDATE users SET reset_requested = 1 WHERE id = ?", (user['id'],))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        
+        # Redirect to admin dashboard for password reset
+        flash(f'Password reset requested for user: {username}. An admin can now set a new password.', 'info')
+        return redirect(url_for('admin_dashboard'))
+    
+    return render_template('forgot_password.html')
+
+@app.route('/admin/change_password/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_change_password(user_id: int):
+    try:
+        new_password = request.form.get('new_password', '').strip()
+        confirm_password = request.form.get('confirm_password', '').strip()
+        
+        if not new_password or not confirm_password:
+            flash('Please fill in all password fields.', 'error')
+            return redirect(url_for('admin_dashboard'))
+        
+        if new_password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return redirect(url_for('admin_dashboard'))
+        
+        if len(new_password) < 6:
+            flash('Password must be at least 6 characters long.', 'error')
+            return redirect(url_for('admin_dashboard'))
+        
+        # Update password and clear reset flag
+        conn = sqlite3.connect(app.config['DATABASE'])
+        conn.execute(
+            "UPDATE users SET password_hash = ?, reset_requested = 0 WHERE id = ?",
+            (generate_password_hash(new_password), user_id)
+        )
+        conn.commit()
+        conn.close()
+        
+        # Get username for flash message
+        user = get_user_by_id(app.config['DATABASE'], user_id)
+        username = user['username'] if user else 'Unknown'
+        flash(f'Password changed successfully for user: {username}', 'success')
+        
+    except Exception as e:
+        flash(f'Failed to change password: {str(e)}', 'error')
+    
+    return redirect(url_for('admin_dashboard'))
+
 if __name__ == '__main__':
-    app.run(debug=True) 
+    app.run(debug=True)
