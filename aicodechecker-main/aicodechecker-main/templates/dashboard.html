@@ -1,0 +1,410 @@
+{% extends 'base.html' %}
+{% block content %}
+
+	<section class="dash-grid">
+		<div class="dash-side">
+			<h3>Menu</h3>
+			<a href="#" class="side-link active" data-tab="code">Code</a>
+			<a href="#" class="side-link" data-tab="upload">Upload</a>
+			<a href="#" class="side-link" data-tab="history">History</a>
+		</div>
+		<div class="dash-main">
+			<section id="code-section" class="card">
+				<h2>Code Analysis</h2>
+				<form id="analyze-form" method="POST" action="{{ url_for('detect') }}" class="form">
+					<div class="language-display">
+						<span class="language-label">Programming Language:</span>
+						{% if detected_language %}
+							<span class="detected-language">{{ detected_language|title }}{% if detected_source %} ({{ detected_source }}){% endif %}</span>
+						{% else %}
+							<span class="detected-language">Auto-detecting...</span>
+						{% endif %}
+					</div>
+					<input type="hidden" id="language-input" name="language" value="{{ detected_language or 'auto' }}">
+					<label>
+						<span>Paste your code</span>
+						<textarea id="code-input" name="code" rows="14" placeholder="Paste code here...">{{ code_input or '' }}</textarea>
+					</label>
+					<div class="actions">
+						<button id="analyze-btn" class="button primary" type="submit">Analyze</button>
+						<button id="clear-btn" class="button" type="button">Clear</button>
+						<span id="analyze-hint" class="muted">Paste code to enable</span>
+						{% if detected_language %}
+							<span id="detected-badge" class="badge" title="Auto-detected language">Detected: {{ detected_language }}{% if detected_source %} ({{ detected_source }}){% endif %}</span>
+						{% else %}
+							<span id="detected-badge" class="badge hidden"></span>
+						{% endif %}
+					</div>
+				</form>
+			</section>
+
+			<section id="upload-section" class="card hidden">
+				<h2>File Upload</h2>
+				<div class="upload-info">
+					<p>Upload code files for analysis. Supported formats:</p>
+					<div class="file-types">
+						<span class="file-type">Python (.py)</span>
+						<span class="file-type">Java (.java)</span>
+						<span class="file-type">C# (.cs)</span>
+						<span class="file-type">C++ (.cpp, .cc, .cxx, .c)</span>
+						<span class="file-type">JavaScript (.js, .ts)</span>
+						<span class="file-type">PHP (.php)</span>
+						<span class="file-type">Ruby (.rb)</span>
+						<span class="file-type">Go (.go)</span>
+						<span class="file-type">Rust (.rs)</span>
+						<span class="file-type">Swift (.swift)</span>
+						<span class="file-type">Kotlin (.kt)</span>
+						<span class="file-type">Scala (.scala)</span>
+						<span class="file-type">R (.r)</span>
+						<span class="file-type">MATLAB (.m)</span>
+					</div>
+				</div>
+				
+				<form method="POST" action="{{ url_for('upload_file') }}" enctype="multipart/form-data" class="form">
+					<label>
+						<span>Select File:</span>
+						<input type="file" name="file" accept=".py,.java,.cs,.cpp,.cc,.cxx,.c,.js,.ts,.php,.rb,.go,.rs,.swift,.kt,.scala,.r,.m" required>
+					</label>
+					<div class="actions">
+						<button type="submit" class="button primary">Upload File</button>
+					</div>
+				</form>
+
+				{% if uploaded_files %}
+				<div class="uploaded-files">
+					<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+						<h3 style="margin: 0;">Recently Uploaded Files</h3>
+						<form method="POST" action="{{ url_for('clear_uploaded_files') }}" style="margin: 0;">
+							<button type="submit" class="button" onclick="return confirm('Are you sure you want to clear all uploaded files? This action cannot be undone.')">Clear All Files</button>
+						</form>
+					</div>
+					<ul class="file-list">
+					{% for file in uploaded_files %}
+						<li class="file-item" id="file-item-{{ file.id }}">
+							<div class="file-info">
+								<span class="file-name">{{ file.original_filename }}</span>
+								<span class="file-meta">{{ file.file_type }} • {{ (file.file_size / 1024)|round(1) }} KB • {{ file.created_at }}</span>
+							</div>
+							<div class="file-actions">
+								<button class="button small" data-content="{{ file.content|replace('\n', '\\n')|replace("'", "\\'") }}" data-type="{{ file.file_type }}" onclick="loadFileContent(this)">Load</button>
+								<button class="button small danger" data-file-id="{{ file.id }}" data-file-name="{{ file.original_filename }}" onclick="removeFile(this)">Remove</button>
+							</div>
+						</li>
+					{% endfor %}
+					</ul>
+				</div>
+				{% endif %}
+			</section>
+
+			<section id="history-section" class="card hidden">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+					<h3 style="margin: 0;">Recent Analyses</h3>
+					<form method="POST" action="{{ url_for('clear_history') }}" style="margin: 0;">
+						<button type="submit" class="button" onclick="return confirm('Are you sure you want to clear all analysis history? This action cannot be undone.')">Clear History</button>
+					</form>
+				</div>
+				{% if history %}
+				<ul class="history">
+				{% for h in history %}
+					<li class="history-item" id="history-item-{{ h.id }}">
+						<div class="history-head">
+							<span class="muted">{{ h.language or 'auto' }} • {{ h.created_at }}</span>
+							{% if h.original_filename %}
+								<span class="file-badge">{{ h.original_filename }}</span>
+							{% endif %}
+						</div>
+						<pre class="history-code">{{ (h.code or '')[:240] }}{% if (h.code or '')|length > 240 %}…{% endif %}</pre>
+						<div class="file-actions">
+							<button class="button small danger" data-analysis-id="{{ h.id }}" onclick="removeHistory(this.getAttribute('data-analysis-id'))">Remove</button>
+						</div>
+					</li>
+				{% endfor %}
+				</ul>
+				{% else %}
+				<p class="empty-history">No analyses yet. Start by analyzing some code!</p>
+				{% endif %}
+			</section>
+		</div>
+
+		<div class="dash-right" id="results-section">
+			{% if llm_result and llm_result.get('label') and 'Unavailable' not in llm_result.get('label', '') %}
+			<div id="llm-card" class="result-card feedback {% if 'AI' in llm_result.label %}is-ai{% elif 'Human' in llm_result.label %}is-human{% else %}is-uncertain{% endif %}">
+				<h3>AI Model Analysis</h3>
+				<p class="score">Score: {{ '%.1f'|format(llm_result.score) }} / 100 ({{ llm_result.score|int }}%) — {{ llm_result.label }}</p>
+				{% if llm_result.get('explanation') %}
+				<details open>
+					<summary>AI Explanation</summary>
+					<p>{{ llm_result.explanation }}</p>
+				</details>
+				{% endif %}
+			</div>
+			{% else %}
+			<div id="llm-card" class="result-card hidden"></div>
+			{% endif %}
+
+			{% if why_human_reasons and why_human_reasons|length > 0 %}
+			<div id="why-human-card" class="result-card">
+				<h3>Why Human</h3>
+				<ul style="margin: 8px 0 0 18px;">
+					{% for reason in why_human_reasons %}
+					<li>{{ reason }}</li>
+					{% endfor %}
+				</ul>
+			</div>
+			{% endif %}
+		</div>
+	</section>
+
+	<script>
+		// Tab switching functionality
+		document.querySelectorAll('.side-link').forEach(link => {
+			link.addEventListener('click', function(e) {
+				e.preventDefault();
+				
+				// Remove active class from all links
+				document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
+				
+				// Add active class to clicked link
+				this.classList.add('active');
+				
+				// Hide all sections
+				document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
+					section.classList.add('hidden');
+				});
+				
+				// Show corresponding section
+				const tab = this.getAttribute('data-tab');
+				document.getElementById(tab + '-section').classList.remove('hidden');
+				
+				// Show/hide results section
+				const resultsSection = document.getElementById('results-section');
+				if (tab === 'history' || tab === 'upload') {
+					resultsSection.classList.add('hidden');
+				} else {
+					resultsSection.classList.remove('hidden');
+				}
+			});
+		});
+
+		// Clear button functionality
+		document.getElementById('clear-btn').addEventListener('click', function() {
+			document.getElementById('code-input').value = '';
+			document.getElementById('language-input').value = '';
+			document.getElementById('analyze-btn').disabled = true;
+			document.getElementById('analyze-hint').classList.remove('hidden');
+			document.getElementById('detected-badge').classList.add('hidden');
+			
+			// Hide all result cards
+			document.querySelectorAll('.result-card').forEach(card => {
+				card.classList.add('hidden');
+			});
+			
+			// Switch back to code tab
+			document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
+			document.querySelector('.side-link[data-tab="code"]').classList.add('active');
+			
+			document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
+				section.classList.add('hidden');
+			});
+			document.getElementById('code-section').classList.remove('hidden');
+			document.getElementById('results-section').classList.remove('hidden');
+		});
+
+		// Code input validation
+		document.getElementById('code-input').addEventListener('input', function() {
+			const code = this.value.trim();
+			const analyzeBtn = document.getElementById('analyze-btn');
+			const analyzeHint = document.getElementById('analyze-hint');
+			
+			if (code) {
+				analyzeBtn.disabled = false;
+				analyzeHint.classList.add('hidden');
+			} else {
+				analyzeBtn.disabled = true;
+				analyzeHint.classList.remove('hidden');
+			}
+		});
+
+		// Update language display when language changes
+		function updateLanguageDisplay(language, source = 'auto') {
+			const languageDisplay = document.querySelector('.detected-language');
+			if (languageDisplay) {
+				languageDisplay.textContent = language.charAt(0).toUpperCase() + language.slice(1) + (source !== 'auto' ? ` (${source})` : '');
+			}
+		}
+
+		// Load file content function
+		function loadFileContent(button) {
+			// Get content and type from data attributes
+			const content = button.getAttribute('data-content');
+			const fileType = button.getAttribute('data-type');
+			
+			// Decode the content (handle escaped characters)
+			const decodedContent = content.replace(/\\n/g, '\n').replace(/\\'/g, "'");
+			
+			// Set the code input
+			document.getElementById('code-input').value = decodedContent;
+			
+			// Set the language based on file type
+			const languageMap = {
+				'py': 'python',
+				'java': 'java',
+				'cs': 'csharp',
+				'cpp': 'cpp',
+				'cc': 'cpp',
+				'cxx': 'cpp',
+				'c': 'cpp',
+				'js': 'javascript',
+				'ts': 'typescript',
+				'php': 'php',
+				'rb': 'ruby',
+				'go': 'go',
+				'rs': 'rust',
+				'swift': 'swift',
+				'kt': 'kotlin',
+				'scala': 'scala',
+				'r': 'r',
+				'm': 'matlab'
+			};
+			
+			const language = languageMap[fileType] || 'auto';
+			document.getElementById('language-input').value = language;
+			
+			// Update language display
+			updateLanguageDisplay(language, 'file');
+			
+			// Enable analyze button
+			document.getElementById('analyze-btn').disabled = false;
+			document.getElementById('analyze-hint').classList.add('hidden');
+			
+			// Switch to code tab
+			document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
+			document.querySelector('.side-link[data-tab="code"]').classList.add('active');
+			
+			document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
+				section.classList.add('hidden');
+			});
+			document.getElementById('code-section').classList.remove('hidden');
+			document.getElementById('results-section').classList.remove('hidden');
+		}
+
+		// Remove file function
+		function removeFile(button) {
+			const fileId = button.getAttribute('data-file-id');
+			const fileName = button.getAttribute('data-file-name');
+			
+			if (confirm('Are you sure you want to remove the file "' + fileName + '"? This action cannot be undone.')) {
+				fetch('/remove_uploaded_file/' + fileId, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/x-www-form-urlencoded',
+					},
+				})
+				.then(response => response.json())
+				.then(data => {
+					if (data.success) {
+						const fileItem = document.getElementById('file-item-' + fileId);
+						if (fileItem) {
+							fileItem.remove();
+						}
+						// Show success message
+						showMessage('File removed successfully!', 'success');
+					} else {
+						showMessage('Error removing file: ' + data.message, 'error');
+					}
+				})
+				.catch(error => {
+					console.error('Error removing file:', error);
+					showMessage('Error removing file: ' + error.message, 'error');
+				});
+			}
+		}
+
+		// Remove history function
+		function removeHistory(analysisId) {
+			if (!confirm('Remove this history item? This action cannot be undone.')) {
+				return;
+			}
+			fetch('/remove_history/' + analysisId, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+			})
+			.then(response => response.json())
+			.then(data => {
+				if (data.success) {
+					const item = document.getElementById('history-item-' + analysisId);
+					if (item) {
+						item.remove();
+					}
+					showMessage('History item removed.', 'success');
+				} else {
+					showMessage('Error removing history: ' + data.message, 'error');
+				}
+			})
+			.catch(error => {
+				console.error('Error removing history:', error);
+				showMessage('Error removing history: ' + error.message, 'error');
+			});
+		}
+
+		// Show message function
+		function showMessage(message, type) {
+			// Create a temporary message element
+			const messageDiv = document.createElement('div');
+			messageDiv.className = 'message ' + type;
+			messageDiv.textContent = message;
+			messageDiv.style.cssText = `
+				position: fixed;
+				top: 20px;
+				right: 20px;
+				padding: 12px 20px;
+				border-radius: 8px;
+				color: white;
+				font-weight: 500;
+				z-index: 1000;
+				background: ${type === 'success' ? '#10b981' : '#ef4444'};
+				box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+			`;
+			
+			document.body.appendChild(messageDiv);
+			
+			// Remove message after 3 seconds
+			setTimeout(() => {
+				if (messageDiv.parentNode) {
+					messageDiv.parentNode.removeChild(messageDiv);
+				}
+			}, 3000);
+		}
+
+		// Initialize page state
+		document.addEventListener('DOMContentLoaded', function() {
+			// Check if we're coming from an upload (URL contains upload=success)
+			const urlParams = new URLSearchParams(window.location.search);
+			const isFromUpload = urlParams.get('upload') === 'success';
+			
+			if (isFromUpload) {
+				// Stay on upload tab if coming from upload
+				document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
+				document.querySelector('.side-link[data-tab="upload"]').classList.add('active');
+				
+				document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
+					section.classList.add('hidden');
+				});
+				document.getElementById('upload-section').classList.remove('hidden');
+				document.getElementById('results-section').classList.add('hidden');
+			} else {
+				// Default state: show code tab
+				document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
+				document.querySelector('.side-link[data-tab="code"]').classList.add('active');
+				
+				document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
+					section.classList.add('hidden');
+				});
+				document.getElementById('code-section').classList.remove('hidden');
+				document.getElementById('results-section').classList.remove('hidden');
+			}
+		});
+	</script>
+{% endblock %} 
