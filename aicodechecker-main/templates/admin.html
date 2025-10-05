@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block title %}Admin - Users · CodeCraft{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 1000px; margin: 0 auto;">
+	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+		<h2 style="margin:0;">Admin Dashboard</h2>
+		<a href="{{ url_for('dashboard') }}" class="button">Back to Dashboard</a>
+	</div>
+	<p class="muted" style="margin-top: 0;">Manage registered accounts. Approve new users, or delete accounts to remove their data.</p>
+	<style>
+		.table tr.highlight-reset { background: rgba(245, 158, 11, 0.08); }
+	</style>
+
+	<table class="table" style="width:100%; border-collapse: collapse;">
+		<thead>
+			<tr>
+				<th style="text-align:left; padding: 8px;">ID</th>
+				<th style="text-align:left; padding: 8px;">Username</th>
+				<th style="text-align:left; padding: 8px;">Created</th>
+				<th style="text-align:left; padding: 8px;">Role</th>
+				<th style="text-align:left; padding: 8px;">Status</th>
+				<th style="text-align:right; padding: 8px;">Actions</th>
+			</tr>
+		</thead>
+		<tbody>
+			{% for u in users %}
+			<tr class="{% if u.reset_requested %}highlight-reset{% endif %}" style="border-top: 1px solid rgba(0,0,0,0.08);">
+				<td style="padding: 8px;">{{ u.id }}</td>
+				<td style="padding: 8px;">{{ u.username }}</td>
+				<td style="padding: 8px;">{{ u.created_at }}</td>
+				<td style="padding: 8px;">
+					{% if u.is_admin %}
+						<span class="badge" style="background:#334155; color:white;">Admin</span>
+					{% else %}
+						<span class="badge" style="background:#4b5563; color:white;">User</span>
+					{% endif %}
+				</td>
+				<td style="padding: 8px;">
+					{% if u.is_approved %}
+						<span class="badge" style="background:#16a34a; color:white;">Approved</span>
+					{% else %}
+						<span class="badge" style="background:#f59e0b; color:white;">Pending</span>
+					{% endif %}
+					{% if u.reset_requested %}
+						<span class="badge" style="background:#f59e0b; color:#111827; margin-left:6px;">Reset Requested</span>
+					{% endif %}
+				</td>
+				<td style="padding: 8px; text-align: right;">
+					<div style="display:inline-flex; gap: 8px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
+						{% if not u.is_admin %}
+							{% if not u.is_approved %}
+							<form method="POST" action="{{ url_for('admin_approve_user', user_id=u.id) }}" style="display:inline;">
+								<button type="submit" class="button">Approve</button>
+							</form>
+							{% endif %}
+							<form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}" style="display:inline;" onsubmit="return confirm('Delete user \'{{ u.username }}\'? This will remove all their data.');">
+								<button type="submit" class="button danger">Delete</button>
+							</form>
+						{% else %}
+							<span class="muted">Protected</span>
+						{% endif %}
+						<button type="button" class="button" data-toggle="pw-{{ u.id }}">Change</button>
+					</div>
+					<div id="pw-{{ u.id }}" class="pw-form hidden" style="margin-top:8px;">
+						<form method="POST" action="{{ url_for('admin_change_password', user_id=u.id) }}" style="display:flex; gap:8px; align-items:center; justify-content:flex-end;">
+							<input type="password" name="new_password" placeholder="New password" required style="min-width:200px;">
+							<input type="password" name="confirm_password" placeholder="Confirm" required style="min-width:180px;">
+							<button type="submit" class="button">Save</button>
+							{% if u.reset_requested %}
+								<span class="muted">(fulfills reset request)</span>
+							{% endif %}
+						</form>
+					</div>
+				</td>
+			</tr>
+			{% endfor %}
+		</tbody>
+	</table>
+
+</section>
+
+<script>
+	// Toggle per-user password form visibility
+	document.querySelectorAll('[data-toggle^="pw-"]').forEach(btn => {
+		btn.addEventListener('click', function() {
+			const id = this.getAttribute('data-toggle');
+			const panel = document.getElementById(id);
+			if (panel) {
+				panel.classList.toggle('hidden');
+			}
+		});
+	});
+</script>
+{% endblock %} 
