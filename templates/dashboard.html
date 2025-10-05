@@ -11,6 +11,16 @@
 		<div class="dash-main">
 			<section id="code-section" class="card">
 				<h2>Code Analysis</h2>
+				<div class="analysis-options">
+					<label class="radio-option">
+						<input type="radio" name="analysis_type" value="basic" checked>
+						<span>Basic Analysis</span>
+					</label>
+					<label class="radio-option">
+						<input type="radio" name="analysis_type" value="enhanced">
+						<span>Enhanced Analysis (with Dataset)</span>
+					</label>
+				</div>
 				<form id="analyze-form" method="POST" action="{{ url_for('detect') }}" class="form">
 					<div class="language-display">
 						<span class="language-label">Programming Language:</span>
@@ -37,6 +47,8 @@
 					</div>
 				</form>
 			</section>
+
+			<!-- Text Analysis section removed -->
 
 			<section id="upload-section" class="card hidden">
 				<h2>File Upload</h2>
@@ -99,9 +111,14 @@
 			<section id="history-section" class="card hidden">
 				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
 					<h3 style="margin: 0;">Recent Analyses</h3>
-					<form method="POST" action="{{ url_for('clear_history') }}" style="margin: 0;">
-						<button type="submit" class="button" onclick="return confirm('Are you sure you want to clear all analysis history? This action cannot be undone.')">Clear History</button>
-					</form>
+					<div style="display:flex; gap:8px;">
+						<form method="GET" action="{{ url_for('history_latest') }}" style="margin: 0;">
+							<button type="submit" class="button">View Latest</button>
+						</form>
+						<form method="POST" action="{{ url_for('clear_history') }}" style="margin: 0;">
+							<button type="submit" class="button" onclick="return confirm('Are you sure you want to clear all analysis history? This action cannot be undone.')">Clear History</button>
+						</form>
+					</div>
 				</div>
 				{% if history %}
 				<ul class="history">
@@ -115,6 +132,7 @@
 						</div>
 						<pre class="history-code">{{ (h.code or '')[:240] }}{% if (h.code or '')|length > 240 %}…{% endif %}</pre>
 						<div class="file-actions">
+							<a class="button small" href="{{ url_for('history_view', analysis_id=h.id) }}">View</a>
 							<button class="button small danger" data-analysis-id="{{ h.id }}" onclick="removeHistory(this.getAttribute('data-analysis-id'))">Remove</button>
 						</div>
 					</li>
@@ -127,7 +145,64 @@
 		</div>
 
 		<div class="dash-right" id="results-section">
-			{% if llm_result and llm_result.get('label') and 'Unavailable' not in llm_result.get('label', '') %}
+			{% if analysis_type == 'code_enhanced' and enhanced_result %}
+			<div id="enhanced-result-card" class="result-card feedback {% if 'AI' in enhanced_result.final_prediction.label %}is-ai{% elif 'Human' in enhanced_result.final_prediction.label %}is-human{% else %}is-uncertain{% endif %}">
+				<h3>Enhanced Code Analysis Result</h3>
+				<p class="score">Score: {{ '%.1f'|format(enhanced_result.final_prediction.score) }} / 100 ({{ enhanced_result.final_prediction.score|int }}%) — {{ enhanced_result.final_prediction.label }}</p>
+				<p class="confidence">Confidence: {{ '%.1f'|format(enhanced_result.final_prediction.confidence * 100) }}%</p>
+				{% if enhanced_result.enhanced_analysis.highlighted_html %}
+				<details open>
+					<summary>Highlighted Indicators</summary>
+					<div class="legend" style="margin:6px 0 10px 0;">
+						<span class="legend-item"><span class="swatch hl-ai"></span> AI indicators</span>
+						<span class="legend-item" style="margin-left:12px;"><span class="swatch hl-human"></span> Human indicators</span>
+					</div>
+					<div class="code-view" style="overflow:auto; max-height:380px;">
+						{{ enhanced_result.enhanced_analysis.highlighted_html | safe }}
+					</div>
+				</details>
+				{% endif %}
+				
+				<details open>
+					<summary>Method Breakdown</summary>
+					<ul>
+						<li>Basic Analysis: {{ '%.1f'|format(enhanced_result.final_prediction.method_breakdown.basic) }}%</li>
+						<li>Deep Learning: {{ '%.1f'|format(enhanced_result.final_prediction.method_breakdown.deep_learning) }}%</li>
+						<li>LLM Analysis: {{ '%.1f'|format(enhanced_result.final_prediction.method_breakdown.llm) }}%</li>
+						<li>Enhanced Patterns: {{ '%.1f'|format(enhanced_result.final_prediction.method_breakdown.enhanced) }}%</li>
+					</ul>
+				</details>
+				
+				{% if enhanced_result.enhanced_analysis and enhanced_result.enhanced_analysis.pattern_matches %}
+				<details>
+					<summary>Pattern Analysis</summary>
+					{% if enhanced_result.enhanced_analysis.pattern_matches.ai_indicators %}
+					<p><strong>AI Indicators:</strong> {{ enhanced_result.enhanced_analysis.pattern_matches.ai_indicators|length }} found</p>
+					{% endif %}
+					{% if enhanced_result.enhanced_analysis.pattern_matches.human_indicators %}
+					<p><strong>Human Indicators:</strong> {{ enhanced_result.enhanced_analysis.pattern_matches.human_indicators|length }} found</p>
+					{% endif %}
+					{% if enhanced_result.enhanced_analysis.llm_model_prediction %}
+					<p><strong>Predicted LLM Model:</strong> {{ enhanced_result.enhanced_analysis.llm_model_prediction }}</p>
+					{% endif %}
+				</details>
+				{% endif %}
+				
+				{% if enhanced_result.enhanced_analysis and enhanced_result.enhanced_analysis.code_metrics %}
+				<details>
+					<summary>Code Metrics</summary>
+					<ul>
+						<li>Total lines: {{ enhanced_result.enhanced_analysis.code_metrics.total_lines }}</li>
+						<li>Functions: {{ enhanced_result.enhanced_analysis.code_metrics.function_count }}</li>
+						<li>Classes: {{ enhanced_result.enhanced_analysis.code_metrics.class_count }}</li>
+						<li>Imports: {{ enhanced_result.enhanced_analysis.code_metrics.import_count }}</li>
+						<li>Complexity: {{ '%.1f'|format(enhanced_result.enhanced_analysis.code_metrics.complexity_score) }}</li>
+					</ul>
+				</details>
+				{% endif %}
+			</div>
+			{% elif false %}
+			{% elif llm_result and llm_result.get('label') and 'Unavailable' not in llm_result.get('label', '') %}
 			<div id="llm-card" class="result-card feedback {% if 'AI' in llm_result.label %}is-ai{% elif 'Human' in llm_result.label %}is-human{% else %}is-uncertain{% endif %}">
 				<h3>AI Model Analysis</h3>
 				<p class="score">Score: {{ '%.1f'|format(llm_result.score) }} / 100 ({{ llm_result.score|int }}%) — {{ llm_result.label }}</p>
@@ -139,7 +214,14 @@
 				{% endif %}
 			</div>
 			{% else %}
+			{% if analysis_type == 'code' and result %}
+			<div id="basic-card" class="result-card feedback {% if 'AI' in result.label %}is-ai{% elif 'Human' in result.label %}is-human{% else %}is-uncertain{% endif %}">
+				<h3>Basic Analysis</h3>
+				<p class="score">Score: {{ '%.1f'|format(result.score) }} / 100 ({{ result.score|int }}%) — {{ result.label }}</p>
+			</div>
+			{% endif %}
 			<div id="llm-card" class="result-card hidden"></div>
+			<div id="text-result-card" class="result-card hidden"></div>
 			{% endif %}
 
 			{% if why_human_reasons and why_human_reasons|length > 0 %}
@@ -168,7 +250,7 @@
 				this.classList.add('active');
 				
 				// Hide all sections
-				document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
+			document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
 					section.classList.add('hidden');
 				});
 				
@@ -203,12 +285,14 @@
 			document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
 			document.querySelector('.side-link[data-tab="code"]').classList.add('active');
 			
-			document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
+			document.querySelectorAll('#code-section, #text-section, #upload-section, #history-section').forEach(section => {
 				section.classList.add('hidden');
 			});
 			document.getElementById('code-section').classList.remove('hidden');
 			document.getElementById('results-section').classList.remove('hidden');
 		});
+
+			// Text UI removed
 
 		// Code input validation
 		document.getElementById('code-input').addEventListener('input', function() {
@@ -224,6 +308,21 @@
 				analyzeHint.classList.remove('hidden');
 			}
 		});
+
+		// Analysis type selection
+		document.querySelectorAll('input[name="analysis_type"]').forEach(radio => {
+			radio.addEventListener('change', function() {
+				const form = document.getElementById('analyze-form');
+				if (this.value === 'enhanced') {
+					form.action = "{{ url_for('detect_enhanced') }}";
+				} else {
+					form.action = "{{ url_for('detect') }}";
+				}
+			});
+		});
+
+		// Text input validation
+		// Text validation removed
 
 		// Update language display when language changes
 		function updateLanguageDisplay(language, source = 'auto') {
@@ -389,22 +488,22 @@
 				document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
 				document.querySelector('.side-link[data-tab="upload"]').classList.add('active');
 				
+			document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
+				section.classList.add('hidden');
+			});
+			document.getElementById('upload-section').classList.remove('hidden');
+			document.getElementById('results-section').classList.add('hidden');
+		} else {
+			// Default state: show code tab
+			document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
+			document.querySelector('.side-link[data-tab="code"]').classList.add('active');
+			
 				document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
-					section.classList.add('hidden');
-				});
-				document.getElementById('upload-section').classList.remove('hidden');
-				document.getElementById('results-section').classList.add('hidden');
-			} else {
-				// Default state: show code tab
-				document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
-				document.querySelector('.side-link[data-tab="code"]').classList.add('active');
-				
-				document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
-					section.classList.add('hidden');
-				});
-				document.getElementById('code-section').classList.remove('hidden');
-				document.getElementById('results-section').classList.remove('hidden');
-			}
+				section.classList.add('hidden');
+			});
+			document.getElementById('code-section').classList.remove('hidden');
+			document.getElementById('results-section').classList.remove('hidden');
+		}
 		});
 	</script>
 {% endblock %} 

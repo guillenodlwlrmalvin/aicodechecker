@@ -7,10 +7,12 @@ from werkzeug.utils import secure_filename
 from models import initialize_database, get_user_by_username, create_user, create_analysis, get_recent_analyses, create_uploaded_file, get_uploaded_files
 from models import list_all_users, delete_user_and_related, get_user_count
 from models import approve_user, get_user_by_id
+from models import get_analysis_by_id
 from detector import analyze_code
 from code_check import check_code, validate_language_match
 from lm_client import classify_with_lmstudio, detect_language_with_lmstudio
 from deep_learning_detector import analyze_code_deep_learning
+from enhanced_detector import analyze_code_with_enhanced_dataset
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'
@@ -161,6 +163,56 @@ def dashboard():
     uploaded_files = get_uploaded_files(app.config['DATABASE'], g.user['id'], limit=20)
     return render_template('dashboard.html', history=history, uploaded_files=uploaded_files)
 
+@app.route('/history/latest')
+def history_latest():
+    if not g.user:
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('login'))
+    try:
+        history = get_recent_analyses(app.config['DATABASE'], g.user['id'], limit=1)
+        latest = history[0] if history else None
+        if not latest:
+            flash('No analyses yet.', 'info')
+            return redirect(url_for('dashboard'))
+        # Render dashboard showing latest code in the code area
+        uploaded_files = get_uploaded_files(app.config['DATABASE'], g.user['id'], limit=20)
+        return render_template(
+            'dashboard.html',
+            code_input=latest.get('code') or '',
+            history=get_recent_analyses(app.config['DATABASE'], g.user['id'], limit=10),
+            uploaded_files=uploaded_files,
+            language=latest.get('language')
+        )
+    except Exception as e:
+        app.logger.error(f"Failed to load latest analysis: {e}")
+        flash('Failed to load latest analysis.', 'error')
+        return redirect(url_for('dashboard'))
+
+@app.route('/history/<int:analysis_id>')
+def history_view(analysis_id: int):
+    if not g.user:
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('login'))
+    try:
+        item = get_analysis_by_id(app.config['DATABASE'], g.user['id'], analysis_id)
+        if not item:
+            flash('Analysis not found.', 'error')
+            return redirect(url_for('dashboard'))
+        uploaded_files = get_uploaded_files(app.config['DATABASE'], g.user['id'], limit=20)
+        # Do NOT re-analyze; and do NOT show any analysis card
+        code = item.get('code') or ''
+        return render_template(
+            'dashboard.html',
+            code_input=code,
+            history=get_recent_analyses(app.config['DATABASE'], g.user['id'], limit=10),
+            uploaded_files=uploaded_files,
+            language=item.get('language')
+        )
+    except Exception as e:
+        app.logger.error(f"Failed to view analysis {analysis_id}: {e}")
+        flash('Failed to open analysis.', 'error')
+        return redirect(url_for('dashboard'))
+
 # Admin routes
 @app.route('/admin')
 @admin_required
@@ -256,6 +308,59 @@ def upload_file():
             return redirect(url_for('dashboard'))
     else:
         flash('File type not allowed. Please upload a code file.', 'error')
+        return redirect(url_for('dashboard'))
+
+# Text analysis endpoints removed
+
+@app.route('/detect_enhanced', methods=['POST'])
+def detect_enhanced():
+    if not g.user:
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        code = request.form.get('code', '').strip()
+        file_id = request.form.get('file_id')
+        
+        if not code:
+            flash('Please paste some code.', 'error')
+            return redirect(url_for('dashboard'))
+        
+        # Enhanced code analysis using comprehensive dataset
+        enhanced_result = analyze_code_with_enhanced_dataset(code, 'auto')
+        
+        # Record analysis
+        try:
+            create_analysis(
+                app.config['DATABASE'],
+                g.user['id'],
+                code,
+                'auto',
+                enhanced_result['final_prediction']['label'],
+                enhanced_result['final_prediction']['score'],
+                True,  # check_ok
+                [],    # no errors
+                int(file_id) if file_id else None,
+                'code_enhanced'
+            )
+        except Exception as e:
+            app.logger.warning(f"Failed to record enhanced analysis: {e}")
+        
+        history = get_recent_analyses(app.config['DATABASE'], g.user['id'], limit=10)
+        uploaded_files = get_uploaded_files(app.config['DATABASE'], g.user['id'], limit=20)
+        
+        return render_template(
+            'dashboard.html',
+            enhanced_result=enhanced_result,
+            code_input=code,
+            history=history,
+            uploaded_files=uploaded_files,
+            analysis_type='code_enhanced'
+        )
+                         
+    except Exception as e:
+        app.logger.error(f"Enhanced code analysis failed: {e}")
+        flash('An error occurred during enhanced analysis. Please try again.', 'error')
         return redirect(url_for('dashboard'))
 
 @app.route('/detect', methods=['POST'])
@@ -379,6 +484,7 @@ def detect():
                 check_ok=bool(check_for_store['ok']),
                 check_errors=list(check_for_store.get('errors') or []),
                 file_id=int(file_id) if file_id else None,
+                content_type='code'
             )
         except Exception as e:
             app.logger.warning(f"Failed to record analysis: {e}")

@@ -38,6 +38,9 @@ def initialize_database(db_path: str) -> None:
                 check_ok INTEGER,
                 check_errors TEXT,
                 file_id INTEGER,
+                content_type TEXT DEFAULT 'code',
+                text_label TEXT,
+                text_score REAL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id),
                 FOREIGN KEY(file_id) REFERENCES uploaded_files(id)
@@ -68,6 +71,16 @@ def initialize_database(db_path: str) -> None:
             conn.execute("ALTER TABLE users ADD COLUMN is_approved INTEGER NOT NULL DEFAULT 0")
         if 'reset_requested' not in col_names:
             conn.execute("ALTER TABLE users ADD COLUMN reset_requested INTEGER NOT NULL DEFAULT 0")
+        
+        # Migration: ensure analysis table columns exist
+        analysis_cols = conn.execute("PRAGMA table_info(analyses)").fetchall()
+        analysis_col_names = {c[1] for c in analysis_cols}
+        if 'content_type' not in analysis_col_names:
+            conn.execute("ALTER TABLE analyses ADD COLUMN content_type TEXT DEFAULT 'code'")
+        if 'text_label' not in analysis_col_names:
+            conn.execute("ALTER TABLE analyses ADD COLUMN text_label TEXT")
+        if 'text_score' not in analysis_col_names:
+            conn.execute("ALTER TABLE analyses ADD COLUMN text_score REAL")
         conn.commit()
     finally:
         conn.close()
@@ -166,13 +179,15 @@ def get_uploaded_files(db_path: str, user_id: int, limit: int = 20) -> List[Dict
 
 def create_analysis(db_path: str, user_id: int, code: str, language: str,
                     heuristic_label: str, heuristic_score: float,
-                    check_ok: bool, check_errors: List[str], file_id: Optional[int] = None) -> int:
+                    check_ok: bool, check_errors: List[str], file_id: Optional[int] = None,
+                    content_type: str = 'code', text_label: Optional[str] = None, 
+                    text_score: Optional[float] = None) -> int:
     conn = _connect(db_path)
     try:
         cur = conn.execute(
             """
-            INSERT INTO analyses (user_id, code, language, heuristic_label, heuristic_score, check_ok, check_errors, file_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO analyses (user_id, code, language, heuristic_label, heuristic_score, check_ok, check_errors, file_id, content_type, text_label, text_score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -183,6 +198,9 @@ def create_analysis(db_path: str, user_id: int, code: str, language: str,
                 1 if check_ok else 0,
                 json.dumps(check_errors or []),
                 file_id,
+                content_type,
+                text_label,
+                text_score,
                 datetime.utcnow().isoformat(),
             ),
         )
@@ -208,6 +226,24 @@ def get_recent_analyses(db_path: str, user_id: int, limit: int = 10) -> List[Dic
         )
         rows = cur.fetchall()
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_analysis_by_id(db_path: str, user_id: int, analysis_id: int) -> Optional[Dict[str, Any]]:
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute(
+            """
+            SELECT a.*, uf.original_filename
+            FROM analyses a
+            LEFT JOIN uploaded_files uf ON a.file_id = uf.id
+            WHERE a.user_id = ? AND a.id = ?
+            """,
+            (user_id, analysis_id)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
     finally:
         conn.close()
 

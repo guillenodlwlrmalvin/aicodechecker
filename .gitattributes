@@ -1,0 +1,14 @@
+* text=auto eol=lf
+*.py  text eol=lf
+*.md  text eol=lf
+*.csv text eol=lf
+*.jsonl text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js  text eol=lf
+*.ts  text eol=lf
+*.ini text eol=lf
+*.ipynb text eol=lf
+*.png -text
+*.jpg -text
+*.sqlite3 -text

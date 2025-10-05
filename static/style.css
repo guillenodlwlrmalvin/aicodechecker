@@ -1,3 +1,42 @@
+/* Highlighting for AI/Human indicators */
+.code-block {
+  background: #0b0f14;
+  color: #e5e7eb;
+  padding: 12px 14px;
+  border-radius: 8px;
+  line-height: 1.4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+mark.hl-ai {
+  background: #1f6feb33;
+  color: inherit;
+  padding: 0 0.5px;
+  border-bottom: 1px solid #58a6ff;
+}
+mark.hl-human {
+  background: #2ea04333;
+  color: inherit;
+  padding: 0 0.5px;
+  border-bottom: 1px solid #3fb950;
+}
+.legend .swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+.legend .hl-ai {
+  background: #1f6feb33;
+  border: 1px solid #58a6ff;
+}
+.legend .hl-human {
+  background: #2ea04333;
+  border: 1px solid #3fb950;
+}
 /* Reset and Base Styles */
 * {
     margin: 0;
