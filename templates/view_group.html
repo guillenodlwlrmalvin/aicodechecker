@@ -1,0 +1,233 @@
+{% extends 'base.html' %}
+{% block title %}{{ group.name }} · CodeCraft{% endblock %}
+{% block content %}
+<div style="display: flex; gap: 20px; max-width: 1400px; margin: 0 auto;">
+	<!-- Left Sidebar -->
+	<div style="width: 200px; flex-shrink: 0;">
+		<div class="sidebar-dark" style="background: #1e293b; border-radius: 12px; padding: 16px; position: sticky; top: 100px;">
+			<h3 style="margin: 0 0 12px 0; color: #fff; font-size: 0.9em; font-weight: 600;">Menu</h3>
+			<div style="display: flex; flex-direction: column; gap: 4px;">
+				<button class="tab-button active" data-tab="members" style="width: 100%; padding: 10px; text-align: left; border: none; background: #8b5cf6; color: white; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 0.95em;">
+					Members
+				</button>
+				<button class="tab-button" data-tab="activities" style="width: 100%; padding: 10px; text-align: left; border: none; background: transparent; color: #cbd5e1; cursor: pointer; font-weight: 400; font-size: 0.95em;">
+					Activities
+				</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- Main Content -->
+	<div class="main-content-dark" style="flex: 1; background: #1e293b; border-radius: 12px; padding: 24px; max-width: 900px;">
+		<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+			<h2 style="margin:0; color: white;">{{ group.name }}</h2>
+			<div style="display:flex; gap: 8px;">
+				{% if g.user.role == 'teacher' or g.user.get('role') == 'teacher' %}
+					<a href="{{ url_for('create_activity_route', group_id=group.id) }}" class="button">Add Activity</a>
+					<a href="{{ url_for('teacher_dashboard') }}" class="button" style="background: #6b7280;">Back</a>
+				{% elif g.user.is_admin or g.user['is_admin'] or (g.user.role == 'admin' or g.user.get('role') == 'admin') %}
+					<a href="{{ url_for('admin_dashboard') }}" class="button" style="background: #6b7280;">Back</a>
+				{% endif %}
+			</div>
+		</div>
+		{% if group.description %}
+		<p class="muted" style="margin-top: 0; color: #94a3b8;">{{ group.description }}</p>
+		{% endif %}
+
+		<!-- Main Content Area -->
+		<div style="flex: 1;">
+			<!-- Members Tab Content -->
+			<div id="members-tab" class="tab-content active">
+				<h3 style="margin-bottom: 16px; color: white;">Group Members</h3>
+				{% if members %}
+				<div style="display: grid; gap: 12px;">
+					{% for member in members %}
+					<div class="card-dark card" style="padding: 16px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a;">
+						<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+							<div>
+								<h4 style="margin: 0; font-size: 1.1em; color: white;">{{ member.username }}</h4>
+								<div style="margin-top: 4px;">
+									{% if member.status == 'approved' %}
+									<span class="badge" style="background:#16a34a; color:white;">Approved</span>
+									{% else %}
+									<span class="badge" style="background:#f59e0b; color:white;">Pending</span>
+									{% endif %}
+								</div>
+							</div>
+							<div>
+								{% if member.status == 'pending' %}
+									{% if g.user.role == 'teacher' or g.user.get('role') == 'teacher' or g.user.is_admin or g.user['is_admin'] %}
+									<div style="display:flex; gap: 4px;">
+										<form method="POST" action="{{ url_for('approve_group_member_route', group_id=group.id, user_id=member.user_id) }}" style="display:inline;">
+											<button type="submit" class="button" style="font-size: 0.85em; padding: 4px 8px;">Approve</button>
+										</form>
+										<form method="POST" action="{{ url_for('decline_group_member_route', group_id=group.id, user_id=member.user_id) }}" style="display:inline;" onsubmit="return confirm('Decline this member?');">
+											<button type="submit" class="button danger" style="font-size: 0.85em; padding: 4px 8px;">Decline</button>
+										</form>
+									</div>
+									{% endif %}
+								{% endif %}
+							</div>
+						</div>
+						
+						<!-- Activity Participation -->
+						{% if member.status == 'approved' and member.user_id in member_participation %}
+							{% set participation = member_participation[member.user_id] %}
+							{% if participation %}
+							<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.08);">
+								<strong style="font-size: 0.9em; display: block; margin-bottom: 8px;">Activity Participation:</strong>
+								<div style="display: grid; gap: 6px;">
+									{% for activity in participation %}
+									<div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em;">
+										<span>{{ activity.title }}</span>
+										<div style="display: flex; gap: 4px; align-items: center;">
+											{% if activity.has_submitted %}
+												<a href="{{ url_for('view_student_submission', student_id=member.user_id, activity_id=activity.id) }}" class="button" style="font-size: 0.75em; padding: 2px 6px; background: #3b82f6;">View Answer</a>
+												<span class="badge" style="background: #16a34a; color: white; font-size: 0.8em;">✓ Submitted</span>
+												{% if activity.grade is not none %}
+												<span class="badge" style="background: #3b82f6; color: white; font-size: 0.8em;">Grade: {{ activity.grade }}</span>
+												{% endif %}
+											{% else %}
+												<span class="badge" style="background: #ef4444; color: white; font-size: 0.8em;">Not Submitted</span>
+											{% endif %}
+										</div>
+									</div>
+									{% endfor %}
+								</div>
+							</div>
+							{% endif %}
+						{% endif %}
+						
+						<div style="margin-top: 8px; font-size: 0.8em; color: #666;">
+							Joined: {{ member.joined_at[:10] }}
+						</div>
+					</div>
+					{% endfor %}
+				</div>
+				{% else %}
+				<div style="text-align: center; padding: 20px; color: #666;">
+					<p>No members yet. Students can join using the group ID: <strong>{{ group.id }}</strong></p>
+				</div>
+				{% endif %}
+			</div>
+
+			<!-- Activities Tab Content -->
+			<div id="activities-tab" class="tab-content" style="display: none;">
+				<h3 style="margin-bottom: 16px; color: white;">Activities</h3>
+				{% if activities %}
+				<div style="display: grid; gap: 12px;">
+					{% for activity in activities %}
+					<div class="card-dark card" style="padding: 16px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a;">
+						<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+							<h4 style="margin: 0; font-size: 1.1em; color: white;">{{ activity.title }}</h4>
+							<div style="display: flex; gap: 8px; align-items: center;">
+								<span class="badge" style="background: #3b82f6; color: white; font-size: 0.8em;">
+									{{ activity.activity_type.title() }}
+								</span>
+								{% if activity.due_date %}
+								<span class="badge" style="background: #f59e0b; color: white; font-size: 0.8em;">
+									Due: {{ activity.due_date[:10] }}
+								</span>
+								{% endif %}
+							</div>
+						</div>
+						{% if activity.description %}
+						<p class="muted" style="margin: 8px 0; font-size: 0.9em;">{{ activity.description }}</p>
+						{% endif %}
+						<div style="display: flex; gap: 8px; margin-top: 12px;">
+							<a href="{{ url_for('view_activity_submissions', activity_id=activity.id) }}" class="button">View All Submissions</a>
+							<span class="muted" style="font-size: 0.8em; align-self: center;">Created: {{ activity.created_at[:10] }}</span>
+						</div>
+					</div>
+					{% endfor %}
+				</div>
+				{% else %}
+				<div style="text-align: center; padding: 20px; color: #666;">
+					<p>No activities yet. Create your first activity to get started.</p>
+					<a href="{{ url_for('create_activity_route', group_id=group.id) }}" class="button">Create Activity</a>
+				</div>
+				{% endif %}
+			</div>
+		</div>
+	</div>
+</div>
+
+<style>
+	.tab-button {
+		transition: all 0.2s;
+	}
+	.tab-button:hover:not(.active) {
+		background: rgba(139, 92, 246, 0.2) !important;
+		color: white !important;
+	}
+	.tab-button.active {
+		background: #8b5cf6 !important;
+		color: white !important;
+		font-weight: 500;
+	}
+	.tab-button:not(.active) {
+		background: transparent !important;
+		color: #cbd5e1 !important;
+		font-weight: 400;
+	}
+	.tab-content {
+		display: none;
+	}
+	.tab-content.active {
+		display: block;
+	}
+	
+	/* Light mode adjustments */
+	.theme-light .main-content-dark {
+		background: white !important;
+	}
+	.theme-light .main-content-dark h2,
+	.theme-light .main-content-dark h3,
+	.theme-light .main-content-dark h4 {
+		color: #000 !important;
+	}
+	.theme-light .main-content-dark p {
+		color: #666 !important;
+	}
+	.theme-light .sidebar-dark {
+		background: #f8f9fa !important;
+	}
+	.theme-light .sidebar-dark h3 {
+		color: #000 !important;
+	}
+	.theme-light .card-dark {
+		background: #f9fafb !important;
+		border-color: #e5e7eb !important;
+	}
+	.theme-light .card-dark h4,
+	.theme-light .card-dark span {
+		color: #000 !important;
+	}
+	.theme-light .card-dark .muted {
+		color: #666 !important;
+	}
+</style>
+
+<script>
+	document.querySelectorAll('.tab-button').forEach(btn => {
+		btn.addEventListener('click', function() {
+			const tabName = this.getAttribute('data-tab');
+			
+			// Remove active class from all buttons and add to clicked one
+			document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+			this.classList.add('active');
+			
+			// Hide all tab contents
+			document.querySelectorAll('.tab-content').forEach(content => {
+				content.style.display = 'none';
+			});
+			
+			// Show the selected tab content
+			const targetContent = document.getElementById(tabName + '-tab');
+			if (targetContent) {
+				targetContent.style.display = 'block';
+			}
+		});
+	});
+</script>
+{% endblock %}

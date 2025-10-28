@@ -6,7 +6,17 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from models import initialize_database, get_user_by_username, create_user, create_analysis, get_recent_analyses, create_uploaded_file, get_uploaded_files
 from models import list_all_users, delete_user_and_related, get_user_count
+<<<<<<< HEAD
 from models import approve_user, get_user_by_id
+=======
+from models import approve_user, get_user_by_id, update_user_role
+from models import create_group, get_teacher_groups, get_group_by_id, get_group_members
+from models import join_group, approve_group_member, decline_group_member
+from models import create_activity, get_group_activities, get_student_activities
+from models import submit_activity, get_activity_submissions, get_student_submissions, grade_submission
+from models import get_all_groups, get_available_groups_for_student, get_student_activity_participation
+from models import get_student_submission_for_activity
+>>>>>>> 07f5d8e (Your commit message)
 from models import get_analysis_by_id
 from detector import analyze_code
 from code_check import check_code, validate_language_match
@@ -95,6 +105,33 @@ def admin_required(view_func):
         return view_func(*args, **kwargs)
     return wrapped
 
+<<<<<<< HEAD
+=======
+def teacher_required(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        if not g.user:
+            flash('Please log in to continue.', 'warning')
+            return redirect(url_for('login'))
+        if g.user.get('role') not in ['teacher', 'admin']:
+            flash('Teacher access required.', 'error')
+            return redirect(url_for('dashboard'))
+        return view_func(*args, **kwargs)
+    return wrapped
+
+def student_required(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        if not g.user:
+            flash('Please log in to continue.', 'warning')
+            return redirect(url_for('login'))
+        if g.user.get('role') not in ['student', 'teacher', 'admin']:
+            flash('Student access required.', 'error')
+            return redirect(url_for('dashboard'))
+        return view_func(*args, **kwargs)
+    return wrapped
+
+>>>>>>> 07f5d8e (Your commit message)
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -159,6 +196,82 @@ def dashboard():
         flash('Please log in to continue.', 'warning')
         return redirect(url_for('login'))
     
+<<<<<<< HEAD
+=======
+    # Redirect based on user role
+    user_role = g.user.get('role', 'student')
+    
+    if user_role == 'admin':
+        return redirect(url_for('admin_dashboard'))
+    elif user_role == 'teacher':
+        return redirect(url_for('teacher_dashboard'))
+    else:  # student
+        return redirect(url_for('student_dashboard'))
+
+@app.route('/student_dashboard')
+@student_required
+def student_dashboard():
+    # Get student's activities and submissions
+    activities = get_student_activities(app.config['DATABASE'], g.user['id'])
+    submissions = get_student_submissions(app.config['DATABASE'], g.user['id'])
+    return render_template('student_dashboard.html', activities=activities, submissions=submissions)
+
+@app.route('/teacher_dashboard')
+@teacher_required
+def teacher_dashboard():
+    # Get teacher's groups and activities
+    groups = get_teacher_groups(app.config['DATABASE'], g.user['id'])
+    return render_template('teacher_dashboard.html', groups=groups)
+
+@app.route('/browse_groups')
+@student_required
+def browse_groups():
+    """Browse available groups to join - for students"""
+    if not g.user:
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('login'))
+    
+    # Get available groups for this student
+    groups = get_available_groups_for_student(app.config['DATABASE'], g.user['id'])
+    return render_template('browse_groups.html', groups=groups)
+
+@app.route('/groups')
+def groups():
+    """Groups page - accessible by teachers and admins"""
+    if not g.user:
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('login'))
+    
+    user_role = g.user.get('role', 'student')
+    is_admin = g.user.get('is_admin') or user_role == 'admin'
+    is_teacher = user_role == 'teacher'
+    
+    if not (is_admin or is_teacher):
+        flash('Access denied. Teacher or admin role required.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    # Get groups based on user role
+    if is_admin:
+        all_groups = get_all_groups(app.config['DATABASE'])
+        return render_template('groups.html', groups=all_groups, user_role='admin')
+    else:
+        # Teacher sees their own groups
+        groups = get_teacher_groups(app.config['DATABASE'], g.user['id'])
+        return render_template('groups.html', groups=groups, user_role='teacher')
+
+@app.route('/code_analysis')
+def code_analysis():
+    # Allow teachers and admins to access code analysis
+    if not g.user:
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('login'))
+    
+    user_role = g.user.get('role', 'student')
+    if user_role not in ['teacher', 'admin'] and not g.user.get('is_admin'):
+        flash('Access denied. Teacher or admin role required.', 'error')
+        return redirect(url_for('dashboard'))
+    
+>>>>>>> 07f5d8e (Your commit message)
     history = get_recent_analyses(app.config['DATABASE'], g.user['id'], limit=10)
     uploaded_files = get_uploaded_files(app.config['DATABASE'], g.user['id'], limit=20)
     return render_template('dashboard.html', history=history, uploaded_files=uploaded_files)
@@ -632,5 +745,276 @@ def admin_change_password(user_id: int):
     
     return redirect(url_for('admin_dashboard'))
 
+<<<<<<< HEAD
+=======
+@app.route('/admin/change_role/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_change_role(user_id: int):
+    try:
+        new_role = request.form.get('new_role', '').strip()
+        
+        if new_role not in ['student', 'teacher', 'admin']:
+            flash('Invalid role selected.', 'error')
+            return redirect(url_for('admin_dashboard'))
+        
+        # Prevent self-demotion from admin
+        if g.user and g.user['id'] == user_id and new_role != 'admin':
+            flash('You cannot change your own admin role.', 'error')
+            return redirect(url_for('admin_dashboard'))
+        
+        update_user_role(app.config['DATABASE'], user_id, new_role)
+        
+        # Get username for flash message
+        user = get_user_by_id(app.config['DATABASE'], user_id)
+        username = user['username'] if user else 'Unknown'
+        flash(f'Role changed successfully for user: {username} (now {new_role})', 'success')
+        
+    except Exception as e:
+        flash(f'Failed to change role: {str(e)}', 'error')
+    
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/create_group', methods=['GET', 'POST'])
+@admin_required
+def admin_create_group():
+    """Admin can create groups and assign them to teachers"""
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        description = request.form.get('description', '').strip()
+        teacher_id = request.form.get('teacher_id', '').strip()
+        
+        if not name:
+            flash('Group name is required.', 'error')
+            return redirect(url_for('admin_create_group'))
+        
+        if not teacher_id:
+            flash('Teacher must be selected.', 'error')
+            return redirect(url_for('admin_create_group'))
+        
+        try:
+            group_id = create_group(app.config['DATABASE'], name, description, int(teacher_id))
+            flash(f'Group "{name}" created successfully!', 'success')
+            return redirect(url_for('admin_dashboard'))
+        except Exception as e:
+            flash(f'Failed to create group: {str(e)}', 'error')
+    
+    # Get all teachers for the dropdown
+    users = list_all_users(app.config['DATABASE'])
+    teachers = [u for u in users if u.get('role') == 'teacher' and u.get('is_approved')]
+    
+    return render_template('admin_create_group.html', teachers=teachers)
+
+# Group Management Routes
+@app.route('/teacher/create_group', methods=['GET', 'POST'])
+@teacher_required
+def create_group_route():
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        description = request.form.get('description', '').strip()
+        
+        if not name:
+            flash('Group name is required.', 'error')
+            return redirect(url_for('create_group_route'))
+        
+        try:
+            group_id = create_group(app.config['DATABASE'], name, description, g.user['id'])
+            flash(f'Group "{name}" created successfully!', 'success')
+            return redirect(url_for('view_group', group_id=group_id))
+        except Exception as e:
+            flash(f'Failed to create group: {str(e)}', 'error')
+    
+    return render_template('create_group.html')
+
+@app.route('/teacher/group/<int:group_id>')
+def view_group(group_id):
+    # Check if user is logged in
+    if not g.user:
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('login'))
+    
+    # Allow teachers, admins, and the group's teacher to view
+    group = get_group_by_id(app.config['DATABASE'], group_id)
+    if not group:
+        flash('Group not found.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    # Check permissions
+    user_role = g.user.get('role', 'student')
+    is_admin = g.user.get('is_admin') or user_role == 'admin'
+    is_teacher = user_role == 'teacher'
+    is_group_teacher = group['teacher_id'] == g.user['id']
+    
+    if not (is_admin or (is_teacher and is_group_teacher)):
+        flash('Access denied.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    members = get_group_members(app.config['DATABASE'], group_id)
+    activities = get_group_activities(app.config['DATABASE'], group_id)
+    
+    # Get activity participation for each member
+    member_participation = {}
+    for member in members:
+        if member['status'] == 'approved':
+            member_participation[member['user_id']] = get_student_activity_participation(
+                app.config['DATABASE'], group_id, member['user_id']
+            )
+    
+    return render_template('view_group.html', group=group, members=members, activities=activities, member_participation=member_participation)
+
+@app.route('/teacher/group/<int:group_id>/approve/<int:user_id>', methods=['POST'])
+@teacher_required
+def approve_group_member_route(group_id, user_id):
+    try:
+        approve_group_member(app.config['DATABASE'], group_id, user_id)
+        flash('Member approved successfully.', 'success')
+    except Exception as e:
+        flash(f'Failed to approve member: {str(e)}', 'error')
+    return redirect(url_for('view_group', group_id=group_id))
+
+@app.route('/teacher/group/<int:group_id>/decline/<int:user_id>', methods=['POST'])
+@teacher_required
+def decline_group_member_route(group_id, user_id):
+    try:
+        decline_group_member(app.config['DATABASE'], group_id, user_id)
+        flash('Member declined successfully.', 'success')
+    except Exception as e:
+        flash(f'Failed to decline member: {str(e)}', 'error')
+    return redirect(url_for('view_group', group_id=group_id))
+
+# Student Group Routes
+@app.route('/student/join_group/<int:group_id>', methods=['POST'])
+@student_required
+def join_group_route(group_id):
+    try:
+        success = join_group(app.config['DATABASE'], group_id, g.user['id'])
+        if success:
+            flash('Request to join group sent successfully!', 'success')
+        else:
+            flash('You are already a member of this group.', 'info')
+    except Exception as e:
+        flash(f'Failed to join group: {str(e)}', 'error')
+    return redirect(url_for('student_dashboard'))
+
+# Activity Management Routes
+@app.route('/teacher/group/<int:group_id>/create_activity', methods=['GET', 'POST'])
+@teacher_required
+def create_activity_route(group_id):
+    group = get_group_by_id(app.config['DATABASE'], group_id)
+    if not group or group['teacher_id'] != g.user['id']:
+        flash('Group not found.', 'error')
+        return redirect(url_for('teacher_dashboard'))
+    
+    if request.method == 'POST':
+        title = request.form.get('title', '').strip()
+        description = request.form.get('description', '').strip()
+        content = request.form.get('content', '').strip()
+        activity_type = request.form.get('activity_type', 'text')
+        due_date = request.form.get('due_date', '').strip() or None
+        
+        if not title or not content:
+            flash('Title and content are required.', 'error')
+            return redirect(url_for('create_activity_route', group_id=group_id))
+        
+        try:
+            activity_id = create_activity(
+                app.config['DATABASE'], group_id, g.user['id'], 
+                title, description, content, activity_type, due_date
+            )
+            flash('Activity created successfully!', 'success')
+            return redirect(url_for('view_group', group_id=group_id))
+        except Exception as e:
+            flash(f'Failed to create activity: {str(e)}', 'error')
+    
+    return render_template('create_activity.html', group=group)
+
+@app.route('/student/activity/<int:activity_id>')
+@student_required
+def view_activity(activity_id):
+    # Get activity details and check if student has access
+    activities = get_student_activities(app.config['DATABASE'], g.user['id'])
+    activity = next((a for a in activities if a['id'] == activity_id), None)
+    
+    if not activity:
+        flash('Activity not found or access denied.', 'error')
+        return redirect(url_for('student_dashboard'))
+    
+    return render_template('view_activity.html', activity=activity)
+
+@app.route('/student/activity/<int:activity_id>/submit', methods=['POST'])
+@student_required
+def submit_activity_route(activity_id):
+    content = request.form.get('content', '').strip()
+    
+    if not content:
+        flash('Submission content is required.', 'error')
+        return redirect(url_for('view_activity', activity_id=activity_id))
+    
+    try:
+        submit_activity(app.config['DATABASE'], activity_id, g.user['id'], content)
+        flash('Activity submitted successfully!', 'success')
+        return redirect(url_for('student_dashboard'))
+    except Exception as e:
+        flash(f'Failed to submit activity: {str(e)}', 'error')
+        return redirect(url_for('view_activity', activity_id=activity_id))
+
+@app.route('/teacher/activity/<int:activity_id>/submissions')
+@teacher_required
+def view_activity_submissions(activity_id):
+    submissions = get_activity_submissions(app.config['DATABASE'], activity_id)
+    return render_template('activity_submissions.html', submissions=submissions)
+
+@app.route('/teacher/submission/<int:submission_id>/grade', methods=['POST'])
+@teacher_required
+def grade_submission_route(submission_id):
+    grade = request.form.get('grade', '').strip()
+    feedback = request.form.get('feedback', '').strip()
+    
+    try:
+        grade_float = float(grade) if grade else None
+        grade_submission(app.config['DATABASE'], submission_id, grade_float, feedback)
+        flash('Submission graded successfully!', 'success')
+    except ValueError:
+        flash('Invalid grade format.', 'error')
+    except Exception as e:
+        flash(f'Failed to grade submission: {str(e)}', 'error')
+    
+    return redirect(url_for('view_activity_submissions', activity_id=request.form.get('activity_id')))
+
+@app.route('/teacher/submission/<int:student_id>/<int:activity_id>')
+def view_student_submission(student_id, activity_id):
+    """View a specific student's answer to a specific activity"""
+    if not g.user:
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('login'))
+    
+    # Check if user has permission (teacher or admin)
+    user_role = g.user.get('role', 'student')
+    if user_role not in ['teacher', 'admin'] and not g.user.get('is_admin'):
+        flash('Access denied. Teacher or admin role required.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    # Get the submission
+    submission = get_student_submission_for_activity(app.config['DATABASE'], student_id, activity_id)
+    
+    if not submission:
+        flash('Submission not found.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    # Get activity details
+    conn = sqlite3.connect(app.config['DATABASE'])
+    conn.row_factory = sqlite3.Row
+    cur = conn.execute("SELECT * FROM activities WHERE id = ?", (activity_id,))
+    activity = cur.fetchone()
+    conn.close()
+    
+    if not activity:
+        flash('Activity not found.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    return render_template('view_student_submission.html', 
+                          submission=submission, 
+                          activity=dict(activity))
+
+>>>>>>> 07f5d8e (Your commit message)
 if __name__ == '__main__':
     app.run(debug=True)

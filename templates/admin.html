@@ -4,17 +4,82 @@
 <section class="card" style="max-width: 1000px; margin: 0 auto;">
 	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
 		<h2 style="margin:0;">Admin Dashboard</h2>
+<<<<<<< HEAD
 		<a href="{{ url_for('dashboard') }}" class="button">Back to Dashboard</a>
 	</div>
 	<p class="muted" style="margin-top: 0;">Manage registered accounts. Approve new users, or delete accounts to remove their data.</p>
 	<style>
 		.table tr.highlight-reset { background: rgba(245, 158, 11, 0.08); }
+=======
+		<div style="display:flex; gap: 8px;">
+			<a href="{{ url_for('admin_dashboard') }}" class="button">Refresh</a>
+		</div>
+	</div>
+	<p class="muted" style="margin-top: 0;">Manage registered accounts. Use the Groups navigation button to manage groups.</p>
+	<style>
+		.table tr.highlight-reset { background: rgba(245, 158, 11, 0.08); }
+		.table { 
+			table-layout: fixed; 
+			width: 100%; 
+			min-width: 800px;
+		}
+		.table th:nth-child(1), .table td:nth-child(1) { width: 60px; } /* ID */
+		.table th:nth-child(2), .table td:nth-child(2) { width: 120px; } /* Username */
+		.table th:nth-child(3), .table td:nth-child(3) { width: 180px; } /* Created */
+		.table th:nth-child(4), .table td:nth-child(4) { width: 100px; } /* Role */
+		.table th:nth-child(5), .table td:nth-child(5) { width: 120px; } /* Status */
+		.table th:nth-child(6), .table td:nth-child(6) { width: 200px; } /* Actions */
+		
+		.pw-form, .role-form { 
+			width: 100%; 
+			box-sizing: border-box; 
+			margin-top: 8px;
+		}
+		.pw-form form, .role-form form {
+			display: flex;
+			gap: 6px;
+			align-items: center;
+			flex-wrap: wrap;
+			width: 100%;
+			box-sizing: border-box;
+		}
+		.pw-form input, .role-form select {
+			box-sizing: border-box;
+			min-width: 80px;
+			max-width: 120px;
+			flex: 1;
+		}
+		.pw-form button, .role-form button {
+			white-space: nowrap;
+			flex-shrink: 0;
+		}
+		.actions-container {
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+			align-items: flex-end;
+		}
+		.actions-buttons {
+			display: flex;
+			gap: 4px;
+			flex-wrap: wrap;
+			justify-content: flex-end;
+		}
+		.actions-buttons .button {
+			font-size: 0.85em;
+			padding: 4px 8px;
+		}
+>>>>>>> 07f5d8e (Your commit message)
 	</style>
 
 	<table class="table" style="width:100%; border-collapse: collapse;">
 		<thead>
 			<tr>
+<<<<<<< HEAD
 				<th style="text-align:left; padding: 8px;">IjjbjdsvjbD</th>
+=======
+				<th style="text-align:left; padding: 8px;">ID</th>
+>>>>>>> 07f5d8e (Your commit message)
 				<th style="text-align:left; padding: 8px;">Username</th>
 				<th style="text-align:left; padding: 8px;">Created</th>
 				<th style="text-align:left; padding: 8px;">Role</th>
@@ -29,10 +94,19 @@
 				<td style="padding: 8px;">{{ u.username }}</td>
 				<td style="padding: 8px;">{{ u.created_at }}</td>
 				<td style="padding: 8px;">
+<<<<<<< HEAD
 					{% if u.is_admin %}
 						<span class="badge" style="background:#334155; color:white;">Admin</span>
 					{% else %}
 						<span class="badge" style="background:#4b5563; color:white;">User</span>
+=======
+					{% if u.role == 'admin' %}
+						<span class="badge" style="background:#334155; color:white;">Admin</span>
+					{% elif u.role == 'teacher' %}
+						<span class="badge" style="background:#7c3aed; color:white;">Teacher</span>
+					{% else %}
+						<span class="badge" style="background:#4b5563; color:white;">Student</span>
+>>>>>>> 07f5d8e (Your commit message)
 					{% endif %}
 				</td>
 				<td style="padding: 8px;">
@@ -46,6 +120,7 @@
 					{% endif %}
 				</td>
 				<td style="padding: 8px; text-align: right;">
+<<<<<<< HEAD
 					<div style="display:inline-flex; gap: 8px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
 						{% if not u.is_admin %}
 							{% if not u.is_approved %}
@@ -70,6 +145,45 @@
 								<span class="muted">(fulfills reset request)</span>
 							{% endif %}
 						</form>
+=======
+					<div class="actions-container">
+						<div class="actions-buttons">
+							{% if u.role != 'admin' %}
+								{% if not u.is_approved %}
+								<form method="POST" action="{{ url_for('admin_approve_user', user_id=u.id) }}" style="display:inline;">
+									<button type="submit" class="button">Approve</button>
+								</form>
+								{% endif %}
+								<form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}" style="display:inline;" onsubmit="return confirm('Delete user \'{{ u.username }}\'? This will remove all their data.');">
+									<button type="submit" class="button danger">Delete</button>
+								</form>
+							{% else %}
+								<span class="muted">Protected</span>
+							{% endif %}
+							<button type="button" class="button" data-toggle="pw-{{ u.id }}">Password</button>
+							<button type="button" class="button" data-toggle="role-{{ u.id }}">Role</button>
+						</div>
+						<div id="pw-{{ u.id }}" class="pw-form hidden">
+							<form method="POST" action="{{ url_for('admin_change_password', user_id=u.id) }}">
+								<input type="password" name="new_password" placeholder="New password" required>
+								<input type="password" name="confirm_password" placeholder="Confirm" required>
+								<button type="submit" class="button">Save</button>
+								{% if u.reset_requested %}
+									<span class="muted" style="font-size: 0.8em;">(fulfills reset request)</span>
+								{% endif %}
+							</form>
+						</div>
+						<div id="role-{{ u.id }}" class="role-form hidden">
+							<form method="POST" action="{{ url_for('admin_change_role', user_id=u.id) }}">
+								<select name="new_role" required>
+									<option value="student" {% if u.role == 'student' %}selected{% endif %}>Student</option>
+									<option value="teacher" {% if u.role == 'teacher' %}selected{% endif %}>Teacher</option>
+									<option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+								</select>
+								<button type="submit" class="button">Update Role</button>
+							</form>
+						</div>
+>>>>>>> 07f5d8e (Your commit message)
 					</div>
 				</td>
 			</tr>
@@ -80,12 +194,28 @@
 </section>
 
 <script>
+<<<<<<< HEAD
 	// Toggle per-user password form visibility
 	document.querySelectorAll('[data-toggle^="pw-"]').forEach(btn => {
+=======
+	// Toggle per-user password and role form visibility
+	document.querySelectorAll('[data-toggle^="pw-"], [data-toggle^="role-"]').forEach(btn => {
+>>>>>>> 07f5d8e (Your commit message)
 		btn.addEventListener('click', function() {
 			const id = this.getAttribute('data-toggle');
 			const panel = document.getElementById(id);
 			if (panel) {
+<<<<<<< HEAD
+=======
+				// Hide all other forms for this user
+				const userId = id.split('-')[1];
+				document.querySelectorAll(`[id^="pw-${userId}"], [id^="role-${userId}"]`).forEach(form => {
+					if (form.id !== id) {
+						form.classList.add('hidden');
+					}
+				});
+				// Toggle current form
+>>>>>>> 07f5d8e (Your commit message)
 				panel.classList.toggle('hidden');
 			}
 		});

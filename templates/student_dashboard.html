@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}Student Dashboard · CodeCraft{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 1200px; margin: 0 auto;">
+	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+		<h2 style="margin:0;">Student Dashboard</h2>
+		<div style="display:flex; gap: 8px;">
+			<a href="{{ url_for('logout') }}" class="button">Logout</a>
+		</div>
+	</div>
+	<p class="muted" style="margin-top: 0;">View your activities, submit assignments, and track your progress.</p>
+
+	<!-- Activities Section -->
+	<div style="margin-top: 24px;">
+		<h3 style="margin-bottom: 16px;">Your Activities</h3>
+		{% if activities %}
+		<div style="display: grid; gap: 12px;">
+			{% for activity in activities %}
+			<div class="card" style="padding: 16px; border: 1px solid rgba(0,0,0,0.1);">
+				<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+					<h4 style="margin: 0; font-size: 1.1em;">{{ activity.title }}</h4>
+					<span class="badge" style="background: #3b82f6; color: white; font-size: 0.8em;">
+						{{ activity.group_name }}
+					</span>
+				</div>
+				{% if activity.description %}
+				<p class="muted" style="margin: 8px 0; font-size: 0.9em;">{{ activity.description }}</p>
+				{% endif %}
+				<div style="display: flex; gap: 8px; margin-top: 12px; align-items: center; flex-wrap: wrap;">
+					<a href="{{ url_for('view_activity', activity_id=activity.id) }}" class="button">View Activity</a>
+					{% if activity.due_date %}
+					<span class="muted" style="font-size: 0.8em;">Due: {{ activity.due_date[:10] }}</span>
+					{% endif %}
+				</div>
+			</div>
+			{% endfor %}
+		</div>
+		{% else %}
+		<div style="text-align: center; padding: 40px; color: #666;">
+			<h3>No Activities Yet</h3>
+			<p>Join groups to see activities assigned by your teachers.</p>
+		</div>
+		{% endif %}
+	</div>
+
+	<!-- Submissions Section -->
+	<div style="margin-top: 32px;">
+		<h3 style="margin-bottom: 16px;">Your Submissions</h3>
+		{% if submissions %}
+		<div style="display: grid; gap: 12px;">
+			{% for submission in submissions %}
+			<div class="card" style="padding: 16px; border: 1px solid rgba(0,0,0,0.1);">
+				<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+					<h4 style="margin: 0; font-size: 1.1em;">{{ submission.activity_title }}</h4>
+					<div style="display: flex; gap: 8px; align-items: center;">
+						<span class="badge" style="background: #6b7280; color: white; font-size: 0.8em;">
+							{{ submission.group_name }}
+						</span>
+						{% if submission.grade is not none %}
+						<span class="badge" style="background: #16a34a; color: white; font-size: 0.8em;">
+							Grade: {{ submission.grade }}
+						</span>
+						{% else %}
+						<span class="badge" style="background: #f59e0b; color: white; font-size: 0.8em;">
+							Pending
+						</span>
+						{% endif %}
+					</div>
+				</div>
+				<div style="margin: 8px 0; font-size: 0.9em;">
+					<strong>Submitted:</strong> {{ submission.submitted_at[:16] }}
+				</div>
+				{% if submission.feedback %}
+				<div style="margin: 8px 0; padding: 8px; background: #f3f4f6; border-radius: 4px;">
+					<strong>Feedback:</strong> {{ submission.feedback }}
+				</div>
+				{% endif %}
+			</div>
+			{% endfor %}
+		</div>
+		{% else %}
+		<div style="text-align: center; padding: 20px; color: #666;">
+			<p>No submissions yet. Complete activities to see your submissions here.</p>
+		</div>
+		{% endif %}
+	</div>
+</section>
+{% endblock %}

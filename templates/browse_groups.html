@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Browse Groups · CodeCraft{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 1200px; margin: 0 auto;">
+	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+		<h2 style="margin:0;">Browse Available Groups</h2>
+		<div style="display:flex; gap: 8px;">
+			<a href="{{ url_for('student_dashboard') }}" class="button">My Dashboard</a>
+		</div>
+	</div>
+	<p class="muted" style="margin-top: 0;">Join groups to participate in activities and connect with your teachers.</p>
+
+	{% if groups %}
+	<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 20px;">
+		{% for group in groups %}
+		<div class="card" style="padding: 16px; border: 1px solid rgba(0,0,0,0.1);">
+			<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+				<h3 style="margin: 0; font-size: 1.2em;">{{ group.name }}</h3>
+			</div>
+			
+			{% if group.description %}
+			<p class="muted" style="margin: 8px 0; font-size: 0.9em;">{{ group.description }}</p>
+			{% endif %}
+		
+			<div style="margin: 8px 0; font-size: 0.9em; color: #6b7280;">
+				<strong>Teacher:</strong> {{ group.teacher_username }}
+			</div>
+		
+			{% if group.membership_status %}
+				{% if group.membership_status == 'approved' %}
+				<div style="margin: 12px 0;">
+					<span class="badge" style="background: #16a34a; color: white;">✓ Member</span>
+				</div>
+				<div style="display: flex; gap: 8px; margin-top: 12px;">
+					<a href="{{ url_for('view_group', group_id=group.id) }}" class="button" style="flex: 1;">View Group</a>
+				</div>
+				{% elif group.membership_status == 'pending' %}
+				<div style="margin: 12px 0;">
+					<span class="badge" style="background: #f59e0b; color: white;">⏳ Pending Approval</span>
+				</div>
+				<div style="display: flex; gap: 8px; margin-top: 12px;">
+					<span style="font-size: 0.9em; color: #666; margin: auto;">Waiting for teacher approval</span>
+				</div>
+				{% endif %}
+			{% else %}
+			<div style="display: flex; gap: 8px; margin-top: 12px;">
+				<form method="POST" action="{{ url_for('join_group_route', group_id=group.id) }}" style="flex: 1;">
+					<button type="submit" class="button" style="width: 100%;">Request to Join</button>
+				</form>
+			</div>
+			{% endif %}
+			
+			<div style="margin-top: 8px; font-size: 0.8em; color: #666;">
+				Created: {{ group.created_at[:10] }}
+			</div>
+		</div>
+		{% endfor %}
+	</div>
+	{% else %}
+	<div style="text-align: center; padding: 40px; color: #666;">
+		<h3>No Groups Available</h3>
+		<p>There are currently no active groups available to join. Check back later!</p>
+	</div>
+	{% endif %}
+</section>
+{% endblock %}
