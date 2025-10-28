@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}Groups · CodeCraft{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 1200px; margin: 0 auto;">
+	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+		<h2 style="margin:0;">Groups & Sections</h2>
+		<div style="display:flex; gap: 8px;">
+			{% if user_role == 'admin' %}
+				<a href="{{ url_for('admin_create_group') }}" class="button">Create Group</a>
+			{% else %}
+				<a href="{{ url_for('create_group_route') }}" class="button">Create Group</a>
+			{% endif %}
+			{% if user_role == 'admin' %}
+				<a href="{{ url_for('admin_dashboard') }}" class="button">Admin Panel</a>
+			{% else %}
+				<a href="{{ url_for('teacher_dashboard') }}" class="button">My Dashboard</a>
+			{% endif %}
+		</div>
+	</div>
+	<p class="muted" style="margin-top: 0;">
+		{% if user_role == 'admin' %}
+			View and manage all groups across the system.
+		{% else %}
+			Manage your groups, create activities, and track student progress.
+		{% endif %}
+	</p>
+
+	{% if groups %}
+	<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 20px;">
+		{% for group in groups %}
+		<div class="card" style="padding: 16px; border: 1px solid rgba(0,0,0,0.1);">
+			<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+				<h3 style="margin: 0; font-size: 1.2em;">{{ group.name }}</h3>
+				<span class="badge" style="background: #16a34a; color: white; font-size: 0.8em;">
+					{{ 'Active' if group.is_active else 'Inactive' }}
+				</span>
+			</div>
+			
+			{% if group.description %}
+			<p class="muted" style="margin: 8px 0; font-size: 0.9em;">{{ group.description }}</p>
+				{% endif %}
+		
+			{% if group.teacher_username and user_role == 'admin' %}
+			<div style="margin: 8px 0; font-size: 0.9em; color: #6b7280;">
+				<strong>Teacher:</strong> {{ group.teacher_username }}
+			</div>
+			{% endif %}
+		
+			<div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+				<a href="{{ url_for('view_group', group_id=group.id) }}" class="button" style="flex: 1; min-width: 80px;">View Group</a>
+				{% if user_role == 'teacher' %}
+					<a href="{{ url_for('create_activity_route', group_id=group.id) }}" class="button" style="flex: 1; min-width: 80px;">Add Activity</a>
+				{% endif %}
+			</div>
+			<div style="margin-top: 8px; font-size: 0.8em; color: #666;">
+				Created: {{ group.created_at[:10] }}
+			</div>
+		</div>
+		{% endfor %}
+	</div>
+	{% else %}
+	<div style="text-align: center; padding: 40px; color: #666;">
+		<h3>No Groups Yet</h3>
+		<p>Create your first group to start managing students and activities.</p>
+		{% if user_role == 'admin' %}
+			<a href="{{ url_for('admin_create_group') }}" class="button">Create Your First Group</a>
+		{% else %}
+			<a href="{{ url_for('create_group_route') }}" class="button">Create Your First Group</a>
+		{% endif %}
+	</div>
+	{% endif %}
+</section>
+{% endblock %}

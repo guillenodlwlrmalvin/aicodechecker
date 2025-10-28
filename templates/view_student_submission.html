@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Student Submission · CodeCraft{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 800px; margin: 0 auto;">
+	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+		<h2 style="margin:0;">Student Submission</h2>
+		<a href="javascript:history.back()" class="button">Back</a>
+	</div>
+	
+	<div style="margin-bottom: 20px; padding: 12px; background: #f3f4f6; border-radius: 4px;">
+		<h3 style="margin: 0 0 8px 0;">Activity: {{ activity.title }}</h3>
+		<p style="margin: 0; color: #666;">Student: <strong>{{ submission.username }}</strong></p>
+		<p style="margin: 0; color: #666;">Submitted: {{ submission.submitted_at[:16] }}</p>
+		{% if submission.grade is not none %}
+		<p style="margin: 8px 0 0 0;">
+			<span class="badge" style="background: #3b82f6; color: white;">Grade: {{ submission.grade }}</span>
+		</p>
+		{% endif %}
+	</div>
+
+	<div style="margin-bottom: 20px;">
+		<h4 style="margin: 0 0 8px 0;">Student's Answer:</h4>
+		<div style="padding: 16px; border: 1px solid #d1d5db; border-radius: 4px; background: white; white-space: pre-wrap; min-height: 200px; color: #000; font-family: monospace;">
+			{{ submission.content }}
+		</div>
+	</div>
+
+	{% if submission.feedback %}
+	<div style="margin-bottom: 20px; padding: 12px; background: #fef3c7; border-radius: 4px;">
+		<h4 style="margin: 0 0 8px 0;">Feedback:</h4>
+		<p style="margin: 0;">{{ submission.feedback }}</p>
+	</div>
+	{% endif %}
+</section>
+{% endblock %}

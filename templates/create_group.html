@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Create Group · CodeCraft{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 600px; margin: 0 auto;">
+	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+		<h2 style="margin:0;">Create New Group</h2>
+		<a href="{{ url_for('teacher_dashboard') }}" class="button">Back to Dashboard</a>
+	</div>
+	<p class="muted" style="margin-top: 0;">Create a new group/section for your students.</p>
+
+	<form method="POST" style="display: flex; flex-direction: column; gap: 16px;">
+		<div>
+			<label for="name" style="display: block; margin-bottom: 4px; font-weight: 500;">Group Name *</label>
+			<input type="text" id="name" name="name" required 
+				   style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;"
+				   placeholder="e.g., CS101 - Programming Fundamentals">
+		</div>
+		
+		<div>
+			<label for="description" style="display: block; margin-bottom: 4px; font-weight: 500;">Description</label>
+			<textarea id="description" name="description" rows="4"
+					  style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; resize: vertical;"
+					  placeholder="Brief description of the group/section..."></textarea>
+		</div>
+
+		<div style="display: flex; gap: 12px; justify-content: flex-end;">
+			<a href="{{ url_for('teacher_dashboard') }}" class="button" style="background: #6b7280;">Cancel</a>
+			<button type="submit" class="button">Create Group</button>
+		</div>
+	</form>
+</section>
+{% endblock %}

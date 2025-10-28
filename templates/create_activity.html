@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}Create Activity · CodeCraft{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 800px; margin: 0 auto;">
+	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+		<h2 style="margin:0;">Create Activity</h2>
+		<a href="{{ url_for('view_group', group_id=group.id) }}" class="button">Back to Group</a>
+	</div>
+	<p class="muted" style="margin-top: 0;">Create a new activity for <strong>{{ group.name }}</strong></p>
+
+	<form method="POST" style="display: flex; flex-direction: column; gap: 16px;">
+		<div>
+			<label for="title" style="display: block; margin-bottom: 4px; font-weight: 500;">Activity Title *</label>
+			<input type="text" id="title" name="title" required 
+				   style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-surface); color: var(--text-primary);"
+				   placeholder="e.g., Assignment 1: Basic Programming">
+		</div>
+		
+		<div>
+			<label for="description" style="display: block; margin-bottom: 4px; font-weight: 500;">Description</label>
+			<textarea id="description" name="description" rows="3"
+					  style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; resize: vertical; background: var(--bg-surface); color: var(--text-primary);"
+					  placeholder="Brief description of the activity..."></textarea>
+		</div>
+
+		<div>
+			<label for="content" style="display: block; margin-bottom: 4px; font-weight: 500;">Activity Content *</label>
+			<textarea id="content" name="content" rows="8" required
+					  style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; resize: vertical; background: var(--bg-surface); color: var(--text-primary);"
+					  placeholder="Detailed instructions for the activity..."></textarea>
+		</div>
+
+		<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+			<div>
+				<label for="activity_type" style="display: block; margin-bottom: 4px; font-weight: 500;">Activity Type</label>
+				<select id="activity_type" name="activity_type" 
+						style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+					<option value="text">Text Assignment</option>
+					<option value="code">Code Assignment</option>
+					<option value="quiz">Quiz</option>
+					<option value="project">Project</option>
+				</select>
+			</div>
+			
+			<div>
+				<label for="due_date" style="display: block; margin-bottom: 4px; font-weight: 500;">Due Date (Optional)</label>
+				<input type="date" id="due_date" name="due_date" 
+					   style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+			</div>
+		</div>
+
+		<div style="display: flex; gap: 12px; justify-content: flex-end;">
+			<a href="{{ url_for('view_group', group_id=group.id) }}" class="button" style="background: #6b7280;">Cancel</a>
+			<button type="submit" class="button">Create Activity</button>
+		</div>
+	</form>
+</section>
+{% endblock %}

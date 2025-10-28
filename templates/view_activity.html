@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block title %}{{ activity.title }} · CodeCraft{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 800px; margin: 0 auto;">
+	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+		<h2 style="margin:0;">{{ activity.title }}</h2>
+		<a href="{{ url_for('student_dashboard') }}" class="button">Back to Dashboard</a>
+	</div>
+	
+	<div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+		<span class="badge" style="background: #3b82f6; color: white;">{{ activity.group_name }}</span>
+		<span class="badge" style="background: #6b7280; color: white;">{{ activity.activity_type.title() }}</span>
+		{% if activity.due_date %}
+		<span class="badge" style="background: #f59e0b; color: white;">Due: {{ activity.due_date[:10] }}</span>
+		{% endif %}
+	</div>
+
+	{% if activity.description %}
+	<div style="margin-bottom: 20px; padding: 12px; background: var(--bg-surface-hover); border-radius: 4px; border: 1px solid var(--border-color);">
+		<h4 style="margin: 0 0 8px 0; color: var(--text-primary);">Description</h4>
+		<p style="margin: 0; color: var(--text-primary);">{{ activity.description }}</p>
+	</div>
+	{% endif %}
+
+	<div style="margin-bottom: 20px;">
+		<h4 style="margin: 0 0 8px 0;">Instructions</h4>
+		<div style="padding: 12px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-surface-hover); color: var(--text-primary);">
+			{{ activity.content|replace('\n', '<br>')|safe }}
+		</div>
+	</div>
+
+    <!-- Submission Section -->
+    <div style="border-top: 1px solid var(--border-color); padding-top: 20px;">
+        <h4 style="margin: 0 0 12px 0;">Your Submission</h4>
+        {% if submission %}
+            {% if submission.content %}
+            <div style="padding: 12px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-surface-hover); color: var(--text-primary); white-space: pre-wrap;">{{ submission.content }}</div>
+            {% endif %}
+            
+            {% if submission.original_filename %}
+            <div style="margin-top: 8px; padding: 12px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-surface-hover);">
+                <strong style="color: var(--text-primary);">Uploaded File:</strong>
+                <div style="margin-top: 4px; color: var(--text-primary);">
+                    📁 {{ submission.original_filename }}
+                    {% if submission.file_size %}
+                    <span style="color: var(--text-muted); font-size: 0.9em;">({{ "%.1f"|format(submission.file_size / 1024) }} KB)</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <div style="margin-top: 8px; display:flex; gap:12px; align-items:center;">
+                <span class="badge" style="background:#16a34a; color:white;">Submitted</span>
+                <span class="muted" style="font-size:0.9em;">at {{ submission.submitted_at[:16] }}</span>
+                {% if submission.grade is not none %}
+                    <span class="badge" style="background:#3b82f6; color:white;">Grade: {{ submission.grade }}</span>
+                {% endif %}
+            </div>
+        {% else %}
+            <form method="POST" action="{{ url_for('submit_activity_route', activity_id=activity.id) }}" enctype="multipart/form-data">
+                <div>
+                    <label for="content" style="display: block; margin-bottom: 4px; font-weight: 500;">Your Answer (Text)</label>
+                    <textarea id="content" name="content" rows="8"
+                              style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; resize: vertical; background: var(--bg-surface); color: var(--text-primary);"
+                              placeholder="Enter your response here..."></textarea>
+                </div>
+                
+                <div style="margin-top: 16px;">
+                    <label for="file" style="display: block; margin-bottom: 4px; font-weight: 500;">Or Upload File (Java/Python only)</label>
+                    <input type="file" id="file" name="file" accept=".java,.py"
+                           style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-surface); color: var(--text-primary);">
+                    <small style="color: var(--text-muted); font-size: 0.8em;">Only .java and .py files are allowed</small>
+                </div>
+                
+                <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">
+                    <a href="{{ url_for('student_dashboard') }}" class="button" style="background: #6b7280;">Cancel</a>
+                    <button type="submit" class="button">Submit Activity</button>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

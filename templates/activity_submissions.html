@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}Activity Submissions · CodeCraft{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 1200px; margin: 0 auto; width: 100%;">
+	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+		<h2 style="margin:0;">Activity Submissions</h2>
+		<a href="{{ url_for('teacher_dashboard') }}" class="button">Back to Dashboard</a>
+	</div>
+	<p class="muted" style="margin-top: 0;">Review and grade student submissions.</p>
+
+	{% if submissions %}
+	<div style="display: grid; gap: 16px; margin-top: 20px;">
+		{% for submission in submissions %}
+		<div class="card" style="padding: 16px; border: 1px solid rgba(0,0,0,0.1);">
+			<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+				<h4 style="margin: 0; font-size: 1.1em;">{{ submission.username }}</h4>
+				<div style="display: flex; gap: 8px; align-items: center;">
+					<span class="badge" style="background: #6b7280; color: white; font-size: 0.8em;">
+						Submitted: {{ submission.submitted_at[:16] }}
+					</span>
+					{% if submission.grade is not none %}
+					<span class="badge" style="background: #16a34a; color: white; font-size: 0.8em;">
+						Grade: {{ submission.grade }}
+					</span>
+					{% else %}
+					<span class="badge" style="background: #f59e0b; color: white; font-size: 0.8em;">
+						Not Graded
+					</span>
+					{% endif %}
+				</div>
+			</div>
+			
+			{% if submission.content %}
+			<div style="margin: 12px 0; padding: 12px; background: var(--bg-surface-hover); border-radius: 4px; border: 1px solid var(--border-color);">
+				<strong style="color: var(--text-primary);">Text Submission:</strong>
+				<div style="margin-top: 8px; white-space: pre-wrap; color: var(--text-primary);">{{ submission.content }}</div>
+			</div>
+			{% endif %}
+			
+			{% if submission.original_filename %}
+			<div style="margin: 12px 0; padding: 12px; background: var(--bg-surface-hover); border-radius: 4px; border: 1px solid var(--border-color);">
+				<strong style="color: var(--text-primary);">File Submission:</strong>
+				<div style="margin-top: 8px; color: var(--text-primary);">
+					📁 {{ submission.original_filename }}
+					{% if submission.file_size %}
+					<span style="color: var(--text-muted); font-size: 0.9em;">({{ "%.1f"|format(submission.file_size / 1024) }} KB)</span>
+					{% endif %}
+				</div>
+			</div>
+			{% endif %}
+
+			<!-- Grading Form -->
+			<div style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 12px;">
+				<form method="POST" action="{{ url_for('grade_submission_route', submission_id=submission.id) }}" style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap;">
+					<input type="hidden" name="activity_id" value="{{ submission.activity_id }}">
+					<div style="flex: 1; min-width: 100px;">
+						<label for="grade" style="display: block; margin-bottom: 4px; font-size: 0.9em; font-weight: 500;">Grade</label>
+						<input type="number" id="grade" name="grade" step="0.1" min="0" max="100"
+							   value="{{ submission.grade if submission.grade is not none else '' }}"
+							   style="width: 100%; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-surface); color: var(--text-primary);"
+							   placeholder="0-100">
+					</div>
+					<div style="flex: 2; min-width: 200px;">
+						<label for="feedback" style="display: block; margin-bottom: 4px; font-size: 0.9em; font-weight: 500;">Feedback</label>
+						<textarea id="feedback" name="feedback" rows="2"
+								  style="width: 100%; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; resize: vertical; background: var(--bg-surface); color: var(--text-primary);"
+								  placeholder="Optional feedback...">{{ submission.feedback or '' }}</textarea>
+					</div>
+					<div>
+						<button type="submit" class="button" style="font-size: 0.9em; padding: 6px 12px;">Grade</button>
+					</div>
+				</form>
+			</div>
+		</div>
+		{% endfor %}
+	</div>
+	{% else %}
+	<div style="text-align: center; padding: 40px; color: #666;">
+		<h3>No Submissions Yet</h3>
+		<p>Students haven't submitted their work for this activity yet.</p>
+	</div>
+	{% endif %}
+</section>
+{% endblock %}
