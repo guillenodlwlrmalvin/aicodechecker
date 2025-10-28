@@ -4,27 +4,62 @@
 <section class="card" style="max-width: 1000px; margin: 0 auto;">
 	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
 		<h2 style="margin:0;">Admin Dashboard</h2>
-		<div style="display:flex; gap: 8px;">
-			<a href="{{ url_for('admin_dashboard') }}" class="button">Refresh</a>
-		</div>
+		<a href="{{ url_for('dashboard') }}" class="button">Back to Dashboard</a>
 	</div>
-	<p class="muted" style="margin-top: 0;">Manage registered accounts. Use the Groups navigation button to manage groups.</p>
+	<p class="muted" style="margin-top: 0;">Manage registered accounts. Approve new users, or delete accounts to remove their data.</p>
 	<style>
 		.table tr.highlight-reset { background: rgba(245, 158, 11, 0.08); }
-		.table { table-layout: fixed; width: 100%; min-width: 800px; }
-		.table th:nth-child(1), .table td:nth-child(1) { width: 60px; }
-		.table th:nth-child(2), .table td:nth-child(2) { width: 120px; }
-		.table th:nth-child(3), .table td:nth-child(3) { width: 180px; }
-		.table th:nth-child(4), .table td:nth-child(4) { width: 100px; }
-		.table th:nth-child(5), .table td:nth-child(5) { width: 120px; }
-		.table th:nth-child(6), .table td:nth-child(6) { width: 200px; }
-		.pw-form, .role-form { width: 100%; box-sizing: border-box; margin-top: 8px; }
-		.pw-form form, .role-form form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; width: 100%; box-sizing: border-box; }
-		.pw-form input, .role-form select { box-sizing: border-box; min-width: 80px; max-width: 120px; flex: 1; }
-		.pw-form button, .role-form button { white-space: nowrap; flex-shrink: 0; }
-		.actions-container { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
-		.actions-buttons { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
-		.actions-buttons .button { font-size: 0.85em; padding: 4px 8px; }
+		.table { 
+			table-layout: fixed; 
+			width: 100%; 
+			min-width: 800px;
+		}
+		.table th:nth-child(1), .table td:nth-child(1) { width: 60px; } /* ID */
+		.table th:nth-child(2), .table td:nth-child(2) { width: 120px; } /* Username */
+		.table th:nth-child(3), .table td:nth-child(3) { width: 180px; } /* Created */
+		.table th:nth-child(4), .table td:nth-child(4) { width: 100px; } /* Role */
+		.table th:nth-child(5), .table td:nth-child(5) { width: 120px; } /* Status */
+		.table th:nth-child(6), .table td:nth-child(6) { width: 200px; } /* Actions */
+		
+		.pw-form, .role-form { 
+			width: 100%; 
+			box-sizing: border-box; 
+			margin-top: 8px;
+		}
+		.pw-form form, .role-form form {
+			display: flex;
+			gap: 6px;
+			align-items: center;
+			flex-wrap: wrap;
+			width: 100%;
+			box-sizing: border-box;
+		}
+		.pw-form input, .role-form select {
+			box-sizing: border-box;
+			min-width: 80px;
+			max-width: 120px;
+			flex: 1;
+		}
+		.pw-form button, .role-form button {
+			white-space: nowrap;
+			flex-shrink: 0;
+		}
+		.actions-container {
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+			align-items: flex-end;
+		}
+		.actions-buttons {
+			display: flex;
+			gap: 4px;
+			flex-wrap: wrap;
+			justify-content: flex-end;
+		}
+		.actions-buttons .button {
+			font-size: 0.85em;
+			padding: 4px 8px;
+		}
 	</style>
 
 	<table class="table" style="width:100%; border-collapse: collapse;">
@@ -117,12 +152,14 @@
 			const id = this.getAttribute('data-toggle');
 			const panel = document.getElementById(id);
 			if (panel) {
+				// Hide all other forms for this user
 				const userId = id.split('-')[1];
 				document.querySelectorAll(`[id^="pw-${userId}"], [id^="role-${userId}"]`).forEach(form => {
 					if (form.id !== id) {
 						form.classList.add('hidden');
 					}
 				});
+				// Toggle current form
 				panel.classList.toggle('hidden');
 			}
 		});

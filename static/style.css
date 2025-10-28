@@ -602,9 +602,9 @@ p {
 /* Dashboard Styles */
 .dash-grid {
     display: grid;
-    grid-template-columns: 250px 1fr;
+    grid-template-columns: 250px 1fr 350px;
     gap: var(--spacing-lg);
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 0 var(--spacing-md);
 }
@@ -656,7 +656,13 @@ p {
     gap: var(--spacing-lg);
 }
 
-/* Right sidebar removed - results now appear below code input */
+.dash-right {
+    background: var(--bg-surface);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-lg);
+    border: 1px solid var(--border-color);
+    height: fit-content;
+}
 
 /* Cards */
 .card {
@@ -681,7 +687,6 @@ p {
     flex-shrink: 0;
     margin: 2px;
 }
-
 
 .card h2 {
     color: var(--text-primary);
@@ -1063,6 +1068,11 @@ p {
     .dash-grid {
         grid-template-columns: 250px 1fr;
     }
+    
+    .dash-right {
+        grid-column: 1 / -1;
+        order: 3;
+    }
 }
 
 @media (max-width: 768px) {
@@ -1141,6 +1151,8 @@ p {
 .input-counter span {
     font-weight: 500;
 }
+
+/* Analysis Source */
 .analysis-source {
     margin-top: var(--spacing-sm);
     font-size: 0.875rem;

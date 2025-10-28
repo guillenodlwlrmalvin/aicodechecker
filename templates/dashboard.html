@@ -13,11 +13,15 @@
 				<h2>Code Analysis</h2>
 				<div class="analysis-options">
 					<label class="radio-option">
-						<input type="radio" name="analysis_type" value="enhanced" checked>
+						<input type="radio" name="analysis_type" value="basic" checked>
+						<span>Basic Analysis</span>
+					</label>
+					<label class="radio-option">
+						<input type="radio" name="analysis_type" value="enhanced">
 						<span>Enhanced Analysis (with Dataset)</span>
 					</label>
 				</div>
-				<form id="analyze-form" method="POST" action="{{ url_for('detect_enhanced') }}" class="form">
+				<form id="analyze-form" method="POST" action="{{ url_for('detect') }}" class="form">
 					<div class="language-display">
 						<span class="language-label">Programming Language:</span>
 						{% if detected_language %}
@@ -45,7 +49,6 @@
 						{% endif %}
 					</div>
 				</form>
-				
 				<!-- Analysis Results Section -->
 				<div style="margin-top: 2rem;">
 				{% if enhanced_result %}
@@ -127,13 +130,26 @@
 					<div class="file-types">
 						<span class="file-type">Python (.py)</span>
 						<span class="file-type">Java (.java)</span>
+						<span class="file-type">C# (.cs)</span>
+						<span class="file-type">C++ (.cpp, .cc, .cxx, .c)</span>
+						<span class="file-type">JavaScript (.js, .ts)</span>
+						<span class="file-type">PHP (.php)</span>
+						<span class="file-type">Ruby (.rb)</span>
+						<span class="file-type">Go (.go)</span>
+						<span class="file-type">Rust (.rs)</span>
+						<span class="file-type">Swift (.swift)</span>
+						<span class="file-type">Kotlin (.kt)</span>
+						<span class="file-type">Scala (.scala)</span>
+						<span class="file-type">R (.r)</span>
+						<span class="file-type">MATLAB (.m)</span>
+					</div>
 					</div>
 				</div>
 				
 				<form method="POST" action="{{ url_for('upload_file') }}" enctype="multipart/form-data" class="form">
 					<label>
 						<span>Select File:</span>
-						<input type="file" name="file" accept=".py,.java" required>
+						<input type="file" name="file" accept=".py,.java,.cs,.cpp,.cc,.cxx,.c,.js,.ts,.php,.rb,.go,.rs,.swift,.kt,.scala,.r,.m" required>
 					</label>
 					<div class="actions">
 						<button type="submit" class="button primary">Upload File</button>
@@ -262,7 +278,6 @@
 			// Reset character counter
 			document.getElementById('char-count').textContent = '0';
 			document.getElementById('char-count').style.color = '#64748b';
-			
 			// Hide all result cards
 			document.querySelectorAll('.result-card').forEach(card => {
 				card.classList.add('hidden');
@@ -300,7 +315,6 @@
 			} else {
 				charCountElement.style.color = '#64748b'; // default gray
 			}
-			
 			if (code) {
 				analyzeBtn.disabled = false;
 				analyzeHint.classList.add('hidden');
@@ -310,7 +324,17 @@
 			}
 		});
 
-		// Analysis type selection removed - only enhanced analysis available
+		// Analysis type selection
+		document.querySelectorAll('input[name="analysis_type"]').forEach(radio => {
+			radio.addEventListener('change', function() {
+				const form = document.getElementById('analyze-form');
+				if (this.value === 'enhanced') {
+					form.action = "{{ url_for('detect_enhanced') }}";
+				} else {
+					form.action = "{{ url_for('detect') }}";
+				}
+			});
+		});
 
 		// Text input validation
 		// Text validation removed
@@ -338,7 +362,23 @@
 			// Set the language based on file type
 			const languageMap = {
 				'py': 'python',
-				'java': 'java'
+				'java': 'java',
+				'cs': 'csharp',
+				'cpp': 'cpp',
+				'cc': 'cpp',
+				'cxx': 'cpp',
+				'c': 'cpp',
+				'js': 'javascript',
+				'ts': 'typescript',
+				'php': 'php',
+				'rb': 'ruby',
+				'go': 'go',
+				'rs': 'rust',
+				'swift': 'swift',
+				'kt': 'kotlin',
+				'scala': 'scala',
+				'r': 'r',
+				'm': 'matlab'
 			};
 			
 			const language = languageMap[fileType] || 'auto';

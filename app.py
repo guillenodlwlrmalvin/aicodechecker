@@ -18,6 +18,7 @@ from models import get_student_submission_for_activity
 from models import get_analysis_by_id
 from detector import analyze_code
 from code_check import check_code, validate_language_match
+from lm_client import classify_with_lmstudio, detect_language_with_lmstudio
 from deep_learning_detector import analyze_code_deep_learning
 from enhanced_detector import analyze_code_with_enhanced_dataset
 
@@ -27,10 +28,26 @@ app.config['DATABASE'] = 'database.sqlite3'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-# Allowed file extensions - only Java and Python
+# Allowed file extensions
 ALLOWED_EXTENSIONS = {
     'py': 'python',
-    'java': 'java'
+    'java': 'java', 
+    'cs': 'csharp',
+    'cpp': 'cpp',
+    'cc': 'cpp',
+    'cxx': 'cpp',
+    'c': 'cpp',
+    'js': 'javascript',
+    'ts': 'typescript',
+    'php': 'php',
+    'rb': 'ruby',
+    'go': 'go',
+    'rs': 'rust',
+    'swift': 'swift',
+    'kt': 'kotlin',
+    'scala': 'scala',
+    'r': 'r',
+    'm': 'matlab'
 }
 # Known languages vocabulary for normalizing LLM outputs
 KNOWN_LANGUAGES = set(ALLOWED_EXTENSIONS.values())
@@ -110,6 +127,7 @@ def student_required(view_func):
             return redirect(url_for('dashboard'))
         return view_func(*args, **kwargs)
     return wrapped
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -246,6 +264,7 @@ def code_analysis():
     if user_role not in ['teacher', 'admin'] and not g.user.get('is_admin'):
         flash('Access denied. Teacher or admin role required.', 'error')
         return redirect(url_for('dashboard'))
+    
     history = get_recent_analyses(app.config['DATABASE'], g.user['id'], limit=10)
     uploaded_files = get_uploaded_files(app.config['DATABASE'], g.user['id'], limit=20)
     return render_template('dashboard.html', history=history, uploaded_files=uploaded_files)
@@ -467,9 +486,8 @@ def detect():
         # AI-powered language detection (fallback to heuristic)
         detected_language = None
         detected_source = 'heuristic'
-        # Language detection removed - using heuristic detection only
-        lm_lang = None
-        if False:  # Disabled LLM language detection
+        lm_lang = detect_language_with_lmstudio(code)
+        if lm_lang and lm_lang not in ('', 'unknown'):
             # Normalize strange labels from LLM, e.g., typos or unknown names
             lang_norm = re.sub(r'[^a-z\+\#]', '', (lm_lang or '').lower())
             # Map common variants
@@ -505,10 +523,10 @@ def detect():
         ) or is_mostly_words or too_short_for_language
 
         heuristic = analyze_code(code, language)
-        llm_result = {
+        llm_result = classify_with_lmstudio(code, language) if not force_neutral else {
             'label': 'Uncertain (LLM)',
             'score': 50.0,
-            'explanation': 'LLM analysis disabled - using enhanced analysis only.',
+            'explanation': 'Language not identified or weak code structure; treating as not a programming language.',
         }
         
         # Deep Learning Analysis
@@ -1031,5 +1049,6 @@ def view_student_submission(student_id, activity_id):
     return render_template('view_student_submission.html', 
                           submission=submission, 
                           activity=dict(activity))
+
 if __name__ == '__main__':
     app.run(debug=True)
