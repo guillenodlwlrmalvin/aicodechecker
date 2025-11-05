@@ -23,9 +23,17 @@
 			<h2 style="margin:0; color: white;">{{ group.name }}</h2>
 			<div style="display:flex; gap: 8px;">
 				{% if g.user.role == 'teacher' or g.user.get('role') == 'teacher' %}
+					{% if group.teacher_id == g.user.id %}
 					<a href="{{ url_for('create_activity_route', group_id=group.id) }}" class="button">Add Activity</a>
+					<form method="POST" action="{{ url_for('delete_group_route', group_id=group.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this group? This will permanently delete all activities, submissions, and members. This action cannot be undone.');">
+						<button type="submit" class="button" style="background: #dc2626; color: white;">Delete Group</button>
+					</form>
+					{% endif %}
 					<a href="{{ url_for('teacher_dashboard') }}" class="button" style="background: #6b7280;">Back</a>
 				{% elif g.user.is_admin or g.user['is_admin'] or (g.user.role == 'admin' or g.user.get('role') == 'admin') %}
+					<form method="POST" action="{{ url_for('admin_delete_group_route', group_id=group.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this group? This will permanently delete all activities, submissions, and members. This action cannot be undone.');">
+						<button type="submit" class="button" style="background: #dc2626; color: white;">Delete Group</button>
+					</form>
 					<a href="{{ url_for('admin_dashboard') }}" class="button" style="background: #6b7280;">Back</a>
 				{% endif %}
 			</div>

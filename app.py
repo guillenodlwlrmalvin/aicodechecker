@@ -9,11 +9,11 @@ from models import initialize_database, get_user_by_username, create_user, creat
 from models import list_all_users, delete_user_and_related, get_user_count
 from models import approve_user, get_user_by_id, update_user_role
 from models import save_uploaded_file, get_uploaded_file, submit_activity
-from models import create_group, get_teacher_groups, get_group_by_id, get_group_members
+from models import create_group, get_teacher_groups, get_group_by_id, get_group_members, delete_group
 from models import join_group, approve_group_member, decline_group_member
 from models import create_activity, get_group_activities, get_student_activities, get_activity_by_id
 from models import get_activity_submissions, get_student_submissions, grade_submission
-from models import create_notification, get_user_notifications, get_unread_notification_count, mark_notification_as_read, mark_all_notifications_as_read
+from models import create_notification, get_user_notifications, get_unread_notification_count, mark_notification_as_read, mark_all_notifications_as_read, get_all_admin_users
 from models import get_all_groups, get_available_groups_for_student, get_student_activity_participation
 from models import get_student_submission_for_activity
 from models import get_analysis_by_id
@@ -148,16 +148,29 @@ def register():
             try:
                 # First user becomes admin automatically and approved
                 is_first_user = get_user_count(app.config['DATABASE']) == 0
-                create_user(
+                user_id = create_user(
                     app.config['DATABASE'],
                     username,
                     generate_password_hash(password),
                     is_admin=is_first_user,
                     is_approved=is_first_user,
                 )
+                
                 if is_first_user:
                     flash('Registration successful! Your account has admin privileges and is approved.', 'success')
                 else:
+                    # Notify all admins about new registration requiring approval
+                    admins = get_all_admin_users(app.config['DATABASE'])
+                    for admin in admins:
+                        create_notification(
+                            app.config['DATABASE'],
+                            admin['id'],
+                            'new_registration',
+                            'New User Registration',
+                            f"New user '{username}' has registered and is awaiting approval.",
+                            user_id,
+                            'user'
+                        )
                     flash('Registration successful! Awaiting admin approval.', 'info')
                 return redirect(url_for('login'))
             except Exception as e:
@@ -557,6 +570,19 @@ def forgot_password():
         except Exception:
             pass
         
+        # Notify all admins about password reset request
+        admins = get_all_admin_users(app.config['DATABASE'])
+        for admin in admins:
+            create_notification(
+                app.config['DATABASE'],
+                admin['id'],
+                'password_reset',
+                'Password Reset Requested',
+                f"User '{username}' has requested a password reset. Please change their password in the admin dashboard.",
+                user['id'],
+                'user'
+            )
+        
         # Redirect to admin dashboard for password reset
         flash(f'Password reset requested for user: {username}. An admin can now set a new password.', 'info')
         return redirect(url_for('admin_dashboard'))
@@ -647,6 +673,26 @@ def admin_create_group():
         
         try:
             group_id = create_group(app.config['DATABASE'], name, description, int(teacher_id))
+            
+            # Get teacher info for notification
+            teacher = get_user_by_id(app.config['DATABASE'], int(teacher_id))
+            teacher_name = teacher['username'] if teacher else 'Unknown'
+            
+            # Notify all admins about new group creation (except the one creating if they're admin)
+            admins = get_all_admin_users(app.config['DATABASE'])
+            for admin in admins:
+                # Skip notification if admin is creating the group themselves
+                if admin['id'] != g.user['id']:
+                    create_notification(
+                        app.config['DATABASE'],
+                        admin['id'],
+                        'new_group',
+                        'New Group Created',
+                        f"Group '{name}' has been created by admin for teacher '{teacher_name}'",
+                        group_id,
+                        'group'
+                    )
+            
             flash(f'Group "{name}" created successfully!', 'success')
             return redirect(url_for('admin_dashboard'))
         except Exception as e:
@@ -672,6 +718,20 @@ def create_group_route():
         
         try:
             group_id = create_group(app.config['DATABASE'], name, description, g.user['id'])
+            
+            # Notify all admins about new group creation
+            admins = get_all_admin_users(app.config['DATABASE'])
+            for admin in admins:
+                create_notification(
+                    app.config['DATABASE'],
+                    admin['id'],
+                    'new_group',
+                    'New Group Created',
+                    f"Teacher '{g.user['username']}' has created a new group: '{name}'",
+                    group_id,
+                    'group'
+                )
+            
             flash(f'Group "{name}" created successfully!', 'success')
             return redirect(url_for('view_group', group_id=group_id))
         except Exception as e:
@@ -734,6 +794,47 @@ def decline_group_member_route(group_id, user_id):
     except Exception as e:
         flash(f'Failed to decline member: {str(e)}', 'error')
     return redirect(url_for('view_group', group_id=group_id))
+
+@app.route('/teacher/group/<int:group_id>/delete', methods=['POST'])
+@teacher_required
+def delete_group_route(group_id):
+    """Teacher can delete their own groups"""
+    group = get_group_by_id(app.config['DATABASE'], group_id)
+    if not group:
+        flash('Group not found.', 'error')
+        return redirect(url_for('teacher_dashboard'))
+    
+    # Check if the current user is the teacher who created this group
+    if group['teacher_id'] != g.user['id']:
+        flash('You can only delete groups you created.', 'error')
+        return redirect(url_for('view_group', group_id=group_id))
+    
+    try:
+        group_name = group['name']
+        delete_group(app.config['DATABASE'], group_id)
+        flash(f'Group "{group_name}" deleted successfully.', 'success')
+        return redirect(url_for('teacher_dashboard'))
+    except Exception as e:
+        flash(f'Failed to delete group: {str(e)}', 'error')
+        return redirect(url_for('view_group', group_id=group_id))
+
+@app.route('/admin/group/<int:group_id>/delete', methods=['POST'])
+@admin_required
+def admin_delete_group_route(group_id):
+    """Admin can delete any group"""
+    group = get_group_by_id(app.config['DATABASE'], group_id)
+    if not group:
+        flash('Group not found.', 'error')
+        return redirect(url_for('admin_dashboard'))
+    
+    try:
+        group_name = group['name']
+        delete_group(app.config['DATABASE'], group_id)
+        flash(f'Group "{group_name}" deleted successfully.', 'success')
+        return redirect(url_for('admin_dashboard'))
+    except Exception as e:
+        flash(f'Failed to delete group: {str(e)}', 'error')
+        return redirect(url_for('admin_dashboard'))
 
 # Student Group Routes
 @app.route('/student/join_group/<int:group_id>', methods=['POST'])

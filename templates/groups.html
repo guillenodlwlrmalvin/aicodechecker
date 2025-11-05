@@ -49,7 +49,16 @@
 			<div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
 				<a href="{{ url_for('view_group', group_id=group.id) }}" class="button" style="flex: 1; min-width: 80px;">View Group</a>
 				{% if user_role == 'teacher' %}
+					{% if group.teacher_id == g.user.id %}
 					<a href="{{ url_for('create_activity_route', group_id=group.id) }}" class="button" style="flex: 1; min-width: 80px;">Add Activity</a>
+					<form method="POST" action="{{ url_for('delete_group_route', group_id=group.id) }}" style="display: inline; flex: 1; min-width: 80px;" onsubmit="return confirm('Are you sure you want to delete this group? This will permanently delete all activities, submissions, and members. This action cannot be undone.');">
+						<button type="submit" class="button" style="width: 100%; background: #dc2626; color: white;">Delete</button>
+					</form>
+					{% endif %}
+				{% elif user_role == 'admin' %}
+					<form method="POST" action="{{ url_for('admin_delete_group_route', group_id=group.id) }}" style="display: inline; flex: 1; min-width: 80px;" onsubmit="return confirm('Are you sure you want to delete this group? This will permanently delete all activities, submissions, and members. This action cannot be undone.');">
+						<button type="submit" class="button" style="width: 100%; background: #dc2626; color: white;">Delete</button>
+					</form>
 				{% endif %}
 			</div>
 			<div style="margin-top: 8px; font-size: 0.8em; color: #666;">

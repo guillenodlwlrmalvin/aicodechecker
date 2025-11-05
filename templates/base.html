@@ -174,7 +174,10 @@
             const icons = {
                 'new_activity': '📝',
                 'submission': '📤',
-                'deadline': '⏰'
+                'deadline': '⏰',
+                'password_reset': '🔑',
+                'new_registration': '👤',
+                'new_group': '👥'
             };
             return icons[type] || '🔔';
         }
@@ -209,6 +212,11 @@
                         // Navigate to related item if applicable
                         if (relatedType === 'activity' && relatedId) {
                             window.location.href = `/student/activity/${relatedId}`;
+                        } else if (relatedType === 'group' && relatedId) {
+                            window.location.href = `/teacher/group/${relatedId}`;
+                        } else if (relatedType === 'user' && relatedId) {
+                            // Navigate to admin dashboard for user management
+                            window.location.href = `/admin`;
                         }
                     }
                 });

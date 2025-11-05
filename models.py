@@ -507,6 +507,37 @@ def decline_group_member(db_path: str, group_id: int, user_id: int) -> None:
         conn.close()
 
 
+def delete_group(db_path: str, group_id: int) -> None:
+    """Delete a group and all related data (cascade delete)"""
+    conn = _connect(db_path)
+    try:
+        # Get all activity IDs for this group first
+        activity_ids = conn.execute(
+            "SELECT id FROM activities WHERE group_id = ?",
+            (group_id,)
+        ).fetchall()
+        
+        # Delete activity submissions (references activities)
+        for activity_id in activity_ids:
+            conn.execute(
+                "DELETE FROM activity_submissions WHERE activity_id = ?",
+                (activity_id[0],)
+            )
+        
+        # Delete activities (references groups)
+        conn.execute("DELETE FROM activities WHERE group_id = ?", (group_id,))
+        
+        # Delete group members (references groups)
+        conn.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
+        
+        # Finally delete the group
+        conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))
+        
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # Activity Management Functions
 def create_activity(db_path: str, group_id: int, teacher_id: int, title: str, 
                    description: str, content: str, activity_type: str = 'text', 
@@ -806,6 +837,19 @@ def mark_all_notifications_as_read(db_path: str, user_id: int) -> None:
             (user_id,)
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_all_admin_users(db_path: str) -> List[Dict[str, Any]]:
+    """Get all admin users"""
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute(
+            "SELECT * FROM users WHERE is_admin = 1 OR role = 'admin'",
+        )
+        rows = cur.fetchall()
+        return [dict(row) for row in rows]
     finally:
         conn.close()
 
