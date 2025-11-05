@@ -11,17 +11,7 @@
 		<div class="dash-main">
 			<section id="code-section" class="card">
 				<h2>Code Analysis</h2>
-				<div class="analysis-options">
-					<label class="radio-option">
-						<input type="radio" name="analysis_type" value="basic" checked>
-						<span>Basic Analysis</span>
-					</label>
-					<label class="radio-option">
-						<input type="radio" name="analysis_type" value="enhanced">
-						<span>Enhanced Analysis (with Dataset)</span>
-					</label>
-				</div>
-				<form id="analyze-form" method="POST" action="{{ url_for('detect') }}" class="form">
+				<form id="analyze-form" method="POST" action="{{ url_for('detect_enhanced') }}" class="form">
 					<div class="language-display">
 						<span class="language-label">Programming Language:</span>
 						{% if detected_language %}
@@ -123,33 +113,20 @@
 
 			<!-- Text Analysis section removed -->
 
-			<section id="upload-section" class="card hidden">
+			<section id="upload-section" class="card hidden" style="display: none !important;">
 				<h2>File Upload</h2>
 				<div class="upload-info">
 					<p>Upload code files for analysis. Supported formats:</p>
 					<div class="file-types">
 						<span class="file-type">Python (.py)</span>
 						<span class="file-type">Java (.java)</span>
-						<span class="file-type">C# (.cs)</span>
-						<span class="file-type">C++ (.cpp, .cc, .cxx, .c)</span>
-						<span class="file-type">JavaScript (.js, .ts)</span>
-						<span class="file-type">PHP (.php)</span>
-						<span class="file-type">Ruby (.rb)</span>
-						<span class="file-type">Go (.go)</span>
-						<span class="file-type">Rust (.rs)</span>
-						<span class="file-type">Swift (.swift)</span>
-						<span class="file-type">Kotlin (.kt)</span>
-						<span class="file-type">Scala (.scala)</span>
-						<span class="file-type">R (.r)</span>
-						<span class="file-type">MATLAB (.m)</span>
-					</div>
 					</div>
 				</div>
 				
 				<form method="POST" action="{{ url_for('upload_file') }}" enctype="multipart/form-data" class="form">
 					<label>
 						<span>Select File:</span>
-						<input type="file" name="file" accept=".py,.java,.cs,.cpp,.cc,.cxx,.c,.js,.ts,.php,.rb,.go,.rs,.swift,.kt,.scala,.r,.m" required>
+						<input type="file" name="file" accept=".py,.java" required>
 					</label>
 					<div class="actions">
 						<button type="submit" class="button primary">Upload File</button>
@@ -182,7 +159,7 @@
 				{% endif %}
 			</section>
 
-			<section id="history-section" class="card hidden">
+			<section id="history-section" class="card hidden" style="display: none !important;">
 				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
 					<h3 style="margin: 0;">Recent Analyses</h3>
 					<div style="display:flex; gap:8px;">
@@ -248,21 +225,32 @@
 				// Add active class to clicked link
 				this.classList.add('active');
 				
-				// Hide all sections
+				// Hide all sections with display: none
 			document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
 					section.classList.add('hidden');
+					section.style.display = 'none';
 				});
 				
 				// Show corresponding section
 				const tab = this.getAttribute('data-tab');
-				document.getElementById(tab + '-section').classList.remove('hidden');
+				const activeSection = document.getElementById(tab + '-section');
+				if (activeSection) {
+					activeSection.classList.remove('hidden');
+					activeSection.style.display = '';
+				}
 				
 				// Show/hide results section
 				const resultsSection = document.getElementById('results-section');
 				if (tab === 'history' || tab === 'upload') {
-					resultsSection.classList.add('hidden');
+					if (resultsSection) {
+						resultsSection.classList.add('hidden');
+						resultsSection.style.display = 'none';
+					}
 				} else {
-					resultsSection.classList.remove('hidden');
+					if (resultsSection) {
+						resultsSection.classList.remove('hidden');
+						resultsSection.style.display = '';
+					}
 				}
 			});
 		});
@@ -289,6 +277,7 @@
 			
 			document.querySelectorAll('#code-section, #text-section, #upload-section, #history-section').forEach(section => {
 				section.classList.add('hidden');
+				section.style.display = 'none';
 			});
 			document.getElementById('code-section').classList.remove('hidden');
 			document.getElementById('results-section').classList.remove('hidden');
@@ -324,17 +313,6 @@
 			}
 		});
 
-		// Analysis type selection
-		document.querySelectorAll('input[name="analysis_type"]').forEach(radio => {
-			radio.addEventListener('change', function() {
-				const form = document.getElementById('analyze-form');
-				if (this.value === 'enhanced') {
-					form.action = "{{ url_for('detect_enhanced') }}";
-				} else {
-					form.action = "{{ url_for('detect') }}";
-				}
-			});
-		});
 
 		// Text input validation
 		// Text validation removed
@@ -362,23 +340,7 @@
 			// Set the language based on file type
 			const languageMap = {
 				'py': 'python',
-				'java': 'java',
-				'cs': 'csharp',
-				'cpp': 'cpp',
-				'cc': 'cpp',
-				'cxx': 'cpp',
-				'c': 'cpp',
-				'js': 'javascript',
-				'ts': 'typescript',
-				'php': 'php',
-				'rb': 'ruby',
-				'go': 'go',
-				'rs': 'rust',
-				'swift': 'swift',
-				'kt': 'kotlin',
-				'scala': 'scala',
-				'r': 'r',
-				'm': 'matlab'
+				'java': 'java'
 			};
 			
 			const language = languageMap[fileType] || 'auto';
@@ -393,13 +355,23 @@
 			
 			// Switch to code tab
 			document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
-			document.querySelector('.side-link[data-tab="code"]').classList.add('active');
+			const codeLink = document.querySelector('.side-link[data-tab="code"]');
+			if (codeLink) codeLink.classList.add('active');
 			
 			document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
 				section.classList.add('hidden');
+				section.style.display = 'none';
 			});
-			document.getElementById('code-section').classList.remove('hidden');
-			document.getElementById('results-section').classList.remove('hidden');
+			const codeSection = document.getElementById('code-section');
+			if (codeSection) {
+				codeSection.classList.remove('hidden');
+				codeSection.style.display = '';
+			}
+			const resultsSection = document.getElementById('results-section');
+			if (resultsSection) {
+				resultsSection.classList.remove('hidden');
+				resultsSection.style.display = '';
+			}
 		}
 
 		// Remove file function
@@ -494,6 +466,12 @@
 
 		// Initialize page state
 		document.addEventListener('DOMContentLoaded', function() {
+			// Ensure all sections are properly hidden first
+			document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
+				section.classList.add('hidden');
+				section.style.display = 'none';
+			});
+			
 			// Check if we're coming from an upload (URL contains upload=success)
 			const urlParams = new URLSearchParams(window.location.search);
 			const isFromUpload = urlParams.get('upload') === 'success';
@@ -501,24 +479,36 @@
 			if (isFromUpload) {
 				// Stay on upload tab if coming from upload
 				document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
-				document.querySelector('.side-link[data-tab="upload"]').classList.add('active');
+				const uploadLink = document.querySelector('.side-link[data-tab="upload"]');
+				if (uploadLink) uploadLink.classList.add('active');
 				
-			document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
-				section.classList.add('hidden');
-			});
-			document.getElementById('upload-section').classList.remove('hidden');
-			document.getElementById('results-section').classList.add('hidden');
-		} else {
-			// Default state: show code tab
-			document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
-			document.querySelector('.side-link[data-tab="code"]').classList.add('active');
-			
-				document.querySelectorAll('#code-section, #upload-section, #history-section').forEach(section => {
-				section.classList.add('hidden');
-			});
-			document.getElementById('code-section').classList.remove('hidden');
-			document.getElementById('results-section').classList.remove('hidden');
-		}
+				const uploadSection = document.getElementById('upload-section');
+				if (uploadSection) {
+					uploadSection.classList.remove('hidden');
+					uploadSection.style.display = '';
+				}
+				const resultsSection = document.getElementById('results-section');
+				if (resultsSection) {
+					resultsSection.classList.add('hidden');
+					resultsSection.style.display = 'none';
+				}
+			} else {
+				// Default state: show code tab
+				document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
+				const codeLink = document.querySelector('.side-link[data-tab="code"]');
+				if (codeLink) codeLink.classList.add('active');
+				
+				const codeSection = document.getElementById('code-section');
+				if (codeSection) {
+					codeSection.classList.remove('hidden');
+					codeSection.style.display = '';
+				}
+				const resultsSection = document.getElementById('results-section');
+				if (resultsSection) {
+					resultsSection.classList.remove('hidden');
+					resultsSection.style.display = '';
+				}
+			}
 		});
 	</script>
 {% endblock %} 

@@ -142,6 +142,22 @@ def initialize_database(db_path: str) -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                related_id INTEGER,
+                related_type TEXT,
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        )
         # Migration: ensure columns exist
         cols = conn.execute("PRAGMA table_info(users)").fetchall()
         col_names = {c[1] for c in cols}
@@ -512,6 +528,20 @@ def create_activity(db_path: str, group_id: int, teacher_id: int, title: str,
         conn.close()
 
 
+def get_activity_by_id(db_path: str, activity_id: int) -> Optional[Dict[str, Any]]:
+    """Get a single activity by ID"""
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute(
+            "SELECT * FROM activities WHERE id = ?",
+            (activity_id,)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 def get_group_activities(db_path: str, group_id: int) -> List[Dict[str, Any]]:
     """Get all activities for a group"""
     conn = _connect(db_path)
@@ -617,7 +647,7 @@ def get_activity_submissions(db_path: str, activity_id: int) -> List[Dict[str, A
     try:
         cur = conn.execute(
             """
-            SELECT s.*, u.username, f.original_filename, f.file_size, f.content_type
+            SELECT s.*, u.username, f.original_filename, f.file_size, f.content_type, f.content as file_content
             FROM activity_submissions s
             JOIN users u ON s.student_id = u.id
             LEFT JOIN uploaded_files f ON s.file_id = f.id
@@ -627,7 +657,16 @@ def get_activity_submissions(db_path: str, activity_id: int) -> List[Dict[str, A
             (activity_id,)
         )
         rows = cur.fetchall()
-        return [dict(row) for row in rows]
+        submissions = [dict(row) for row in rows]
+        # Combine content: use text content if available, otherwise use file content
+        for submission in submissions:
+            if submission.get('content'):
+                submission['code_content'] = submission['content']
+            elif submission.get('file_content'):
+                submission['code_content'] = submission['file_content']
+            else:
+                submission['code_content'] = ''
+        return submissions
     finally:
         conn.close()
 
@@ -685,6 +724,88 @@ def get_student_activity_participation(db_path: str, group_id: int, student_id: 
         )
         rows = cur.fetchall()
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+# Notification functions
+def create_notification(db_path: str, user_id: int, notification_type: str, title: str, 
+                       message: str, related_id: int = None, related_type: str = None) -> int:
+    """Create a new notification for a user"""
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute(
+            """
+            INSERT INTO notifications (user_id, type, title, message, related_id, related_type, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, notification_type, title, message, related_id, related_type, datetime.utcnow().isoformat())
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def get_user_notifications(db_path: str, user_id: int, limit: int = 50, unread_only: bool = False) -> List[Dict[str, Any]]:
+    """Get notifications for a user"""
+    conn = _connect(db_path)
+    try:
+        query = """
+            SELECT * FROM notifications
+            WHERE user_id = ?
+        """
+        params = [user_id]
+        
+        if unread_only:
+            query += " AND is_read = 0"
+        
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        
+        cur = conn.execute(query, params)
+        rows = cur.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_unread_notification_count(db_path: str, user_id: int) -> int:
+    """Get count of unread notifications for a user"""
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute(
+            "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0",
+            (user_id,)
+        )
+        row = cur.fetchone()
+        return row['count'] if row else 0
+    finally:
+        conn.close()
+
+
+def mark_notification_as_read(db_path: str, notification_id: int, user_id: int) -> None:
+    """Mark a notification as read"""
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?",
+            (notification_id, user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_all_notifications_as_read(db_path: str, user_id: int) -> None:
+    """Mark all notifications as read for a user"""
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE notifications SET is_read = 1 WHERE user_id = ?",
+            (user_id,)
+        )
+        conn.commit()
     finally:
         conn.close()
 

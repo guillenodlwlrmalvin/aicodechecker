@@ -11,14 +11,14 @@ from models import approve_user, get_user_by_id, update_user_role
 from models import save_uploaded_file, get_uploaded_file, submit_activity
 from models import create_group, get_teacher_groups, get_group_by_id, get_group_members
 from models import join_group, approve_group_member, decline_group_member
-from models import create_activity, get_group_activities, get_student_activities
+from models import create_activity, get_group_activities, get_student_activities, get_activity_by_id
 from models import get_activity_submissions, get_student_submissions, grade_submission
+from models import create_notification, get_user_notifications, get_unread_notification_count, mark_notification_as_read, mark_all_notifications_as_read
 from models import get_all_groups, get_available_groups_for_student, get_student_activity_participation
 from models import get_student_submission_for_activity
 from models import get_analysis_by_id
 from detector import analyze_code
 from code_check import check_code, validate_language_match
-from lm_client import classify_with_lmstudio, detect_language_with_lmstudio
 from deep_learning_detector import analyze_code_deep_learning
 from enhanced_detector import analyze_code_with_enhanced_dataset
 
@@ -54,8 +54,12 @@ KNOWN_LANGUAGES = set(ALLOWED_EXTENSIONS.values())
 
 
 def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    """Check if file is allowed - only Python and Java files are allowed for upload"""
+    if '.' not in filename:
+        return False
+    ext = filename.rsplit('.', 1)[1].lower()
+    # Only allow Python and Java files
+    return ext in ['py', 'java']
 
 
 def get_language_from_extension(filename):
@@ -265,9 +269,12 @@ def code_analysis():
         flash('Access denied. Teacher or admin role required.', 'error')
         return redirect(url_for('dashboard'))
     
+    # Get code from query parameter if provided
+    code_input = request.args.get('code', '')
+    
     history = get_recent_analyses(app.config['DATABASE'], g.user['id'], limit=10)
     uploaded_files = get_uploaded_files(app.config['DATABASE'], g.user['id'], limit=20)
-    return render_template('dashboard.html', history=history, uploaded_files=uploaded_files)
+    return render_template('dashboard.html', history=history, uploaded_files=uploaded_files, code_input=code_input)
 
 @app.route('/history/latest')
 def history_latest():
@@ -380,6 +387,7 @@ def upload_file():
         flash('No file selected.', 'error')
         return redirect(url_for('dashboard'))
     
+    # Only allow Python and Java files
     if file and allowed_file(file.filename):
         try:
             # Read file content
@@ -413,8 +421,45 @@ def upload_file():
             flash(f'Error uploading file: {str(e)}', 'error')
             return redirect(url_for('dashboard'))
     else:
-        flash('File type not allowed. Please upload a code file.', 'error')
+        flash('Only Python (.py) and Java (.java) files are allowed.', 'error')
         return redirect(url_for('dashboard'))
+
+@app.route('/clear_uploaded_files', methods=['POST'])
+def clear_uploaded_files():
+    if not g.user:
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        conn = sqlite3.connect(app.config['DATABASE'])
+        # First, remove file_id references from analyses
+        conn.execute("UPDATE analyses SET file_id = NULL WHERE user_id = ?", (g.user['id'],))
+        # Then delete all uploaded files
+        conn.execute("DELETE FROM uploaded_files WHERE user_id = ?", (g.user['id'],))
+        conn.commit()
+        conn.close()
+        flash('All uploaded files cleared successfully!', 'success')
+    except Exception as e:
+        flash(f'Error clearing uploaded files: {str(e)}', 'error')
+    
+    return redirect(url_for('dashboard'))
+
+@app.route('/remove_uploaded_file/<int:file_id>', methods=['POST'])
+def remove_uploaded_file(file_id):
+    if not g.user:
+        return jsonify({'success': False, 'message': 'Please log in to continue.'}), 401
+    
+    try:
+        conn = sqlite3.connect(app.config['DATABASE'])
+        # First, remove file_id references from analyses
+        conn.execute("UPDATE analyses SET file_id = NULL WHERE user_id = ? AND file_id = ?", (g.user['id'], file_id))
+        # Then delete the specific uploaded file
+        conn.execute("DELETE FROM uploaded_files WHERE id = ? AND user_id = ?", (file_id, g.user['id']))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'File removed successfully!'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error removing file: {str(e)}'}), 500
 
 # Text analysis endpoints removed
 
@@ -469,152 +514,6 @@ def detect_enhanced():
         flash('An error occurred during enhanced analysis. Please try again.', 'error')
         return redirect(url_for('dashboard'))
 
-@app.route('/detect', methods=['POST'])
-def detect():
-    if not g.user:
-        flash('Please log in to continue.', 'warning')
-        return redirect(url_for('dashboard'))
-    
-    try:
-        code = request.form.get('code', '').strip()
-        file_id = request.form.get('file_id')
-        
-        if not code:
-            flash('Please paste some code.', 'error')
-            return redirect(url_for('dashboard'))
-        
-        # AI-powered language detection (fallback to heuristic)
-        detected_language = None
-        detected_source = 'heuristic'
-        lm_lang = detect_language_with_lmstudio(code)
-        if lm_lang and lm_lang not in ('', 'unknown'):
-            # Normalize strange labels from LLM, e.g., typos or unknown names
-            lang_norm = re.sub(r'[^a-z\+\#]', '', (lm_lang or '').lower())
-            # Map common variants
-            aliases = {
-                'csharp': 'csharp', 'cs': 'csharp',
-                'cplusplus': 'cpp', 'c\+\+': 'cpp', 'cpp': 'cpp', 'c': 'cpp',
-                'js': 'javascript', 'node': 'javascript', 'javascript': 'javascript',
-                'ts': 'typescript', 'typescript': 'typescript',
-                'py': 'python', 'python': 'python',
-            }
-            lang_mapped = aliases.get(lang_norm, lang_norm)
-            if lang_mapped in KNOWN_LANGUAGES:
-                detected_language = lang_mapped
-                detected_source = 'llm'
-            else:
-                # Treat as unknown if not in our vocabulary
-                detected_language = 'unknown'
-                detected_source = 'llm'
-        else:
-            check = check_code(code, 'auto')
-            detected_language = check.get('language') or 'unknown'
-
-        # Always use detected language
-        language = detected_language
-
-        # Heuristic quick signals for non-code / weak code format
-        is_mostly_words = bool(re.search(r"[A-Za-z]{4,}\s+[A-Za-z]{4,}", code)) and not bool(re.search(r"\{|\}|;|=>|def\s|class\s|import\s|function\s|#|//|/\*", code))
-        too_short_for_language = len(code.splitlines()) <= 2 and len(code) < 30
-
-        # Force neutral outcome for non-programming-language inputs
-        force_neutral = str(language or '').strip().lower() in (
-            'unknown', 'none', 'text', 'plain text', 'not a programming language', 'not_a_language'
-        ) or is_mostly_words or too_short_for_language
-
-        heuristic = analyze_code(code, language)
-        llm_result = classify_with_lmstudio(code, language) if not force_neutral else {
-            'label': 'Uncertain (LLM)',
-            'score': 50.0,
-            'explanation': 'Language not identified or weak code structure; treating as not a programming language.',
-        }
-        
-        # Deep Learning Analysis
-        deep_learning_result = analyze_code_deep_learning(code, language) if not force_neutral else {
-            'label': 'Uncertain',
-            'score': 50.0,
-            'confidence': 0.5,
-            'explanation': 'Language not identified or weak code structure; neutral classification applied.'
-        }
-
-        # Build feedback with priority: Deep Learning > LLM > Heuristic
-        feedback = None
-        try:
-            # If neutral is forced, short-circuit to Uncertain (50%)
-            if force_neutral:
-                score = 50.0
-                feedback = { 'title': f"Uncertain ({int(score)}%)", 'kind': 'uncertain', 'source': 'Language detection' }
-            # Try Deep Learning first (most accurate)
-            elif deep_learning_result and deep_learning_result.get('score') is not None:
-                score = deep_learning_result['score']
-                if score > 75:
-                    feedback = { 'title': f"AI-generated ({int(score)}%)", 'kind': 'ai', 'source': 'Deep Learning' }
-                elif score < 25:
-                    feedback = { 'title': f"Human-written ({int(score)}%)", 'kind': 'human', 'source': 'Deep Learning' }
-                else:
-                    feedback = { 'title': f"Uncertain ({int(score)}%)", 'kind': 'uncertain', 'source': 'Deep Learning' }
-            
-            # Fallback to LLM if Deep Learning fails
-            elif llm_result and llm_result.get('label') and 'Unavailable' not in llm_result.get('label'):
-                score = float(llm_result.get('score', 50.0))
-                if 'AI' in llm_result['label'].upper():
-                    feedback = { 'title': f"AI-generated ({int(score)}%)", 'kind': 'ai', 'source': 'AI Model' }
-                elif 'HUMAN' in llm_result['label'].upper():
-                    feedback = { 'title': f"Human-written ({int(score)}%)", 'kind': 'human', 'source': 'AI Model' }
-                else:
-                    feedback = { 'title': f"Uncertain ({int(score)}%)", 'kind': 'uncertain', 'source': 'AI Model' }
-            
-            # Final fallback to heuristic
-            else:
-                score = float(heuristic.get('score', 50.0))
-                if 'AI' in heuristic.get('label', '').upper():
-                    feedback = { 'title': f"AI-generated ({int(score)}%)", 'kind': 'ai', 'source': 'Heuristic' }
-                elif 'HUMAN' in heuristic.get('label', '').upper():
-                    feedback = { 'title': f"Human-written ({int(score)}%)", 'kind': 'human', 'source': 'Heuristic' }
-                else:
-                    feedback = { 'title': f"Uncertain ({int(score)}%)", 'kind': 'uncertain', 'source': 'Heuristic' }
-        except Exception:
-            feedback = None
-
-        # Record analysis
-        try:
-            # Use heuristic for stored score/label to keep storage consistent
-            check_for_store = check_code(code, language)
-            create_analysis(
-                app.config['DATABASE'],
-                g.user['id'],
-                code,
-                language,
-                heuristic_label=heuristic['label'],
-                heuristic_score=float(heuristic['score']),
-                check_ok=bool(check_for_store['ok']),
-                check_errors=list(check_for_store.get('errors') or []),
-                file_id=int(file_id) if file_id else None,
-                content_type='code'
-            )
-        except Exception as e:
-            app.logger.warning(f"Failed to record analysis: {e}")
-
-        history = get_recent_analyses(app.config['DATABASE'], g.user['id'], limit=10)
-        uploaded_files = get_uploaded_files(app.config['DATABASE'], g.user['id'], limit=20)
-        
-        return render_template(
-            'dashboard.html',
-            result=heuristic,
-            llm_result=llm_result,
-            feedback=feedback,
-            code_input=code,
-            language=language,
-            detected_language=detected_language,
-            detected_source=detected_source,
-            history=history,
-            uploaded_files=uploaded_files,
-        )
-                         
-    except Exception as e:
-        app.logger.error(f"Code analysis failed: {e}")
-        flash('An error occurred during analysis. Please try again.', 'error')
-        return redirect(url_for('dashboard'))
 
 @app.route('/clear_history', methods=['POST'])
 def clear_history():
@@ -633,42 +532,6 @@ def clear_history():
     
     return redirect(url_for('dashboard'))
 
-@app.route('/clear_uploaded_files', methods=['POST'])
-def clear_uploaded_files():
-    if not g.user:
-        flash('Please log in to continue.', 'warning')
-        return redirect(url_for('dashboard'))
-    
-    try:
-        conn = sqlite3.connect(app.config['DATABASE'])
-        # First, remove file_id references from analyses
-        conn.execute("UPDATE analyses SET file_id = NULL WHERE user_id = ?", (g.user['id'],))
-        # Then delete all uploaded files
-        conn.execute("DELETE FROM uploaded_files WHERE user_id = ?", (g.user['id'],))
-        conn.commit()
-        conn.close()
-        flash('All uploaded files cleared successfully!', 'success')
-    except Exception as e:
-        flash(f'Error clearing uploaded files: {str(e)}', 'error')
-    
-    return redirect(url_for('dashboard'))
-
-@app.route('/remove_uploaded_file/<int:file_id>', methods=['POST'])
-def remove_uploaded_file(file_id):
-    if not g.user:
-        return jsonify({'success': False, 'message': 'Please log in to continue.'}), 401
-    
-    try:
-        conn = sqlite3.connect(app.config['DATABASE'])
-        # First, remove file_id references from analyses
-        conn.execute("UPDATE analyses SET file_id = NULL WHERE user_id = ? AND file_id = ?", (g.user['id'], file_id))
-        # Then delete the specific uploaded file
-        conn.execute("DELETE FROM uploaded_files WHERE id = ? AND user_id = ?", (file_id, g.user['id']))
-        conn.commit()
-        conn.close()
-        return jsonify({'success': True, 'message': 'File removed successfully!'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'Error removing file: {str(e)}'}), 500
 
 @app.route('/forgot_password', methods=['GET', 'POST'])
 def forgot_password():
@@ -911,6 +774,22 @@ def create_activity_route(group_id):
                 app.config['DATABASE'], group_id, g.user['id'], 
                 title, description, content, activity_type, due_date
             )
+            
+            # Notify all approved students in the group about the new activity
+            members = get_group_members(app.config['DATABASE'], group_id)
+            for member in members:
+                if member['status'] == 'approved' and member['role'] == 'student':
+                    due_date_msg = f" Due date: {due_date}" if due_date else ""
+                    create_notification(
+                        app.config['DATABASE'],
+                        member['user_id'],
+                        'new_activity',
+                        'New Activity: ' + title,
+                        f"A new activity '{title}' has been added to your group.{due_date_msg}",
+                        activity_id,
+                        'activity'
+                    )
+            
             flash('Activity created successfully!', 'success')
             return redirect(url_for('view_group', group_id=group_id))
         except Exception as e:
@@ -982,6 +861,22 @@ def submit_activity_route(activity_id):
     
     try:
         submit_activity(app.config['DATABASE'], activity_id, g.user['id'], content, file_id)
+        
+        # Get activity details to notify teacher
+        activity = get_activity_by_id(app.config['DATABASE'], activity_id)
+        
+        if activity:
+            # Notify the teacher about the submission
+            create_notification(
+                app.config['DATABASE'],
+                activity['teacher_id'],
+                'submission',
+                'New Submission',
+                f"Student {g.user['username']} submitted the activity '{activity['title']}'",
+                activity_id,
+                'activity'
+            )
+        
         flash('Activity submitted successfully!', 'success')
         return redirect(url_for('student_dashboard'))
     except ValueError as e:
@@ -996,7 +891,14 @@ def submit_activity_route(activity_id):
 @teacher_required
 def view_activity_submissions(activity_id):
     submissions = get_activity_submissions(app.config['DATABASE'], activity_id)
-    return render_template('activity_submissions.html', submissions=submissions)
+    # Check for plagiarism if requested
+    check_plagiarism = request.args.get('check_plagiarism', 'false').lower() == 'true'
+    plagiarism_results = None
+    if check_plagiarism:
+        from plagiarism_detector import detect_plagiarism
+        plagiarism_results = detect_plagiarism(submissions)
+    return render_template('activity_submissions.html', submissions=submissions, 
+                         plagiarism_results=plagiarism_results, activity_id=activity_id)
 
 @app.route('/teacher/submission/<int:submission_id>/grade', methods=['POST'])
 @teacher_required
@@ -1014,6 +916,109 @@ def grade_submission_route(submission_id):
         flash(f'Failed to grade submission: {str(e)}', 'error')
     
     return redirect(url_for('view_activity_submissions', activity_id=request.form.get('activity_id')))
+
+@app.route('/api/notifications')
+def get_notifications():
+    """Get notifications for the current user"""
+    if not g.user:
+        return jsonify({'notifications': [], 'unread_count': 0})
+    
+    notifications = get_user_notifications(app.config['DATABASE'], g.user['id'], limit=20)
+    unread_count = get_unread_notification_count(app.config['DATABASE'], g.user['id'])
+    
+    return jsonify({
+        'notifications': notifications,
+        'unread_count': unread_count
+    })
+
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
+def mark_notification_read(notification_id):
+    """Mark a notification as read"""
+    if not g.user:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    mark_notification_as_read(app.config['DATABASE'], notification_id, g.user['id'])
+    return jsonify({'success': True})
+
+
+@app.route('/api/notifications/read-all', methods=['POST'])
+def mark_all_notifications_read():
+    """Mark all notifications as read"""
+    if not g.user:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    mark_all_notifications_as_read(app.config['DATABASE'], g.user['id'])
+    return jsonify({'success': True})
+
+
+@app.route('/api/notifications/check-deadlines')
+def check_deadlines():
+    """Check for upcoming deadlines and create notifications"""
+    if not g.user or g.user.get('role') != 'student':
+        return jsonify({'success': False})
+    
+    from datetime import datetime, timedelta
+    
+    # Get all activities for the student
+    activities = get_student_activities(app.config['DATABASE'], g.user['id'])
+    now = datetime.utcnow()
+    
+    for activity in activities:
+        if activity.get('due_date') and not activity.get('has_submitted'):
+            try:
+                # Parse due_date (could be in various formats)
+                due_date_str = activity['due_date']
+                # Handle ISO format with or without timezone
+                if 'T' in due_date_str:
+                    if due_date_str.endswith('Z'):
+                        due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
+                    else:
+                        due_date = datetime.fromisoformat(due_date_str)
+                else:
+                    # If no time, assume end of day
+                    due_date = datetime.fromisoformat(due_date_str + 'T23:59:59')
+                
+                # Make due_date timezone-aware if now is naive
+                if due_date.tzinfo is None:
+                    due_date = due_date.replace(tzinfo=None)
+                if now.tzinfo is not None:
+                    now = now.replace(tzinfo=None)
+                
+                # Check if deadline is within 24 hours
+                time_until_deadline = due_date - now
+                
+                if timedelta(hours=0) < time_until_deadline <= timedelta(hours=24):
+                    # Check if we already notified about this deadline
+                    existing_notifications = get_user_notifications(
+                        app.config['DATABASE'], 
+                        g.user['id'], 
+                        limit=50
+                    )
+                    
+                    # Check if notification already exists for this deadline
+                    already_notified = any(
+                        n['related_id'] == activity['id'] and 
+                        n['type'] == 'deadline' and
+                        n['is_read'] == 0
+                        for n in existing_notifications
+                    )
+                    
+                    if not already_notified:
+                        create_notification(
+                            app.config['DATABASE'],
+                            g.user['id'],
+                            'deadline',
+                            'Deadline Approaching',
+                            f"Activity '{activity['title']}' is due in less than 24 hours!",
+                            activity['id'],
+                            'activity'
+                        )
+            except Exception:
+                pass  # Skip invalid dates
+    
+    return jsonify({'success': True})
+
 
 @app.route('/teacher/submission/<int:student_id>/<int:activity_id>')
 def view_student_submission(student_id, activity_id):

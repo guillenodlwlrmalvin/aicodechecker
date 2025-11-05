@@ -14,7 +14,6 @@ from pathlib import Path
 # Import existing detectors
 from detector import analyze_code
 from deep_learning_detector import analyze_code_deep_learning
-from lm_client import classify_with_lmstudio
 
 # Import new dataset loader
 from code_dataset_loader import CodeDatasetLoader
@@ -87,7 +86,7 @@ class EnhancedCodeDetector:
         self.load_dataset()
         basic_result = analyze_code(code, language)
         deep_learning_result = analyze_code_deep_learning(code, language)
-        llm_result = classify_with_lmstudio(code, language)
+        llm_result = None  # LM client removed
         enhanced_analysis = self._analyze_with_dataset_patterns(code)
         return {
             'basic_analysis': basic_result,
@@ -210,13 +209,12 @@ class EnhancedCodeDetector:
         predictions: List[float] = []
         weights: List[float] = []
         if basic_result and 'score' in basic_result:
-            predictions.append(basic_result['score']); weights.append(0.2)
+            predictions.append(basic_result['score']); weights.append(0.25)
         if deep_result and 'score' in deep_result:
-            predictions.append(deep_result['score']); weights.append(0.3)
-        if llm_result and 'score' in llm_result:
-            predictions.append(llm_result['score']); weights.append(0.15)
+            predictions.append(deep_result['score']); weights.append(0.35)
+        # LLM client removed - no longer using llm_result
         if enhanced_result and 'ai_score' in enhanced_result:
-            predictions.append(enhanced_result['ai_score']); weights.append(0.35)
+            predictions.append(enhanced_result['ai_score']); weights.append(0.40)
         
         final_score = sum(p * w for p, w in zip(predictions, weights)) / sum(weights) if predictions else 50.0
         if final_score > 60: final_label = 'AI-generated'
@@ -229,7 +227,7 @@ class EnhancedCodeDetector:
             'method_breakdown': {
                 'basic': basic_result.get('score', 0) if basic_result else 0,
                 'deep_learning': deep_result.get('score', 0) if deep_result else 0,
-                'llm': llm_result.get('score', 0) if llm_result else 0,
+                'llm': 0,  # LLM client removed
                 'enhanced': enhanced_result.get('ai_score', 0) if enhanced_result else 0,
             },
         }

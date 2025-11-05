@@ -33,6 +33,21 @@
                     {% if g.user.is_admin or g.user['is_admin'] %}
                         <a href="{{ url_for('admin_dashboard') }}" class="nav-link">Admin</a>
                     {% endif %}
+                    <div class="notification-container" style="position: relative;">
+                        <button class="notification-bell" id="notification-bell" onclick="toggleNotifications()" style="background: transparent; border: none; cursor: pointer; padding: 8px; position: relative; font-size: 1.2em;">
+                            🔔
+                            <span id="notification-badge" class="notification-badge" style="display: none; position: absolute; top: 0; right: 0; background: #dc2626; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 0.7em; align-items: center; justify-content: center; font-weight: bold;">0</span>
+                        </button>
+                        <div id="notification-dropdown" class="notification-dropdown" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 8px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 320px; max-width: 400px; max-height: 500px; overflow-y: auto; z-index: 1000;">
+                            <div style="padding: 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                                <strong style="color: var(--text-primary);">Notifications</strong>
+                                <button onclick="markAllAsRead()" style="background: transparent; border: none; color: var(--primary-purple); cursor: pointer; font-size: 0.85em; padding: 4px 8px;">Mark all as read</button>
+                            </div>
+                            <div id="notification-list" style="max-height: 400px; overflow-y: auto;">
+                                <div style="padding: 20px; text-align: center; color: var(--text-muted);">Loading...</div>
+                            </div>
+                        </div>
+                    </div>
                     <a href="{{ url_for('logout') }}" class="nav-link">Logout</a>
                 {% else %}
                     <a href="{{ url_for('login') }}" class="nav-link">Login</a>
@@ -89,13 +104,153 @@
             }
         }
 
-        // Load saved theme
+        // Notification functions
+        function toggleNotifications() {
+            const dropdown = document.getElementById('notification-dropdown');
+            if (dropdown.style.display === 'none' || !dropdown.style.display) {
+                dropdown.style.display = 'block';
+                loadNotifications();
+            } else {
+                dropdown.style.display = 'none';
+            }
+        }
+
+        function loadNotifications() {
+            fetch('/api/notifications')
+                .then(response => response.json())
+                .then(data => {
+                    updateNotificationBadge(data.unread_count);
+                    displayNotifications(data.notifications);
+                })
+                .catch(error => {
+                    console.error('Error loading notifications:', error);
+                });
+        }
+
+        function updateNotificationBadge(count) {
+            const badge = document.getElementById('notification-badge');
+            if (count > 0) {
+                badge.style.display = 'flex';
+                badge.textContent = count > 99 ? '99+' : count;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        function displayNotifications(notifications) {
+            const list = document.getElementById('notification-list');
+            
+            if (notifications.length === 0) {
+                list.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No notifications</div>';
+                return;
+            }
+
+            list.innerHTML = notifications.map(notif => {
+                const isRead = notif.is_read === 1 || notif.is_read === '1';
+                const timeAgo = getTimeAgo(notif.created_at);
+                const icon = getNotificationIcon(notif.type);
+                const bgColor = isRead ? 'var(--bg-surface)' : 'var(--bg-surface-hover)';
+                
+                return `
+                    <div onclick="markAsRead(${notif.id}, '${notif.related_type || ''}', ${notif.related_id || 'null'})" 
+                         style="padding: 12px; border-bottom: 1px solid var(--border-color); cursor: pointer; background: ${bgColor}; transition: background 0.2s;"
+                         onmouseover="this.style.background='var(--bg-surface-hover)'"
+                         onmouseout="this.style.background='${bgColor}'">
+                        <div style="display: flex; gap: 12px;">
+                            <div style="font-size: 1.5em;">${icon}</div>
+                            <div style="flex: 1;">
+                                <div style="font-weight: ${isRead ? '400' : '600'}; color: var(--text-primary); margin-bottom: 4px;">${escapeHtml(notif.title)}</div>
+                                <div style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 4px;">${escapeHtml(notif.message)}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted);">${timeAgo}</div>
+                            </div>
+                            ${!isRead ? '<div style="width: 8px; height: 8px; background: var(--primary-purple); border-radius: 50%; margin-top: 8px;"></div>' : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getNotificationIcon(type) {
+            const icons = {
+                'new_activity': '📝',
+                'submission': '📤',
+                'deadline': '⏰'
+            };
+            return icons[type] || '🔔';
+        }
+
+        function getTimeAgo(dateString) {
+            const now = new Date();
+            const date = new Date(dateString);
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            return date.toLocaleDateString();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function markAsRead(notificationId, relatedType, relatedId) {
+            fetch(`/api/notifications/${notificationId}/read`, { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        loadNotifications();
+                        // Navigate to related item if applicable
+                        if (relatedType === 'activity' && relatedId) {
+                            window.location.href = `/student/activity/${relatedId}`;
+                        }
+                    }
+                });
+        }
+
+        function markAllAsRead() {
+            fetch('/api/notifications/read-all', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        loadNotifications();
+                    }
+                });
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const container = document.querySelector('.notification-container');
+            const dropdown = document.getElementById('notification-dropdown');
+            if (container && dropdown && !container.contains(event.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
+
+        // Load saved theme and notifications
         document.addEventListener('DOMContentLoaded', function() {
             const savedTheme = localStorage.getItem('theme');
             if (savedTheme === 'light') {
                 document.body.classList.add('theme-light');
                 document.querySelector('.theme-icon').textContent = '☀️';
             }
+            
+            // Load notifications
+            {% if g.user %}
+            loadNotifications();
+            // Check deadlines for students
+            {% if g.user.role == 'student' or g.user.get('role') == 'student' %}
+            fetch('/api/notifications/check-deadlines');
+            {% endif %}
+            // Refresh notifications every 30 seconds
+            setInterval(loadNotifications, 30000);
+            {% endif %}
         });
     </script>
 </body>

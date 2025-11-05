@@ -17,15 +17,7 @@ def client(monkeypatch, tmp_path):
     # Ensure schema exists for this temp DB
     initialize_database(db_path)
 
-    # Monkeypatch LM functions to avoid network
-    def fake_classify(code, lang, base_url=None, model=None):
-        return {'label': 'Uncertain (LLM)', 'score': 50.0, 'explanation': 'stub'}
-
-    def fake_detect_lang(code, base_url=None, model=None):
-        return 'python'
-
-    monkeypatch.setattr(app_module, 'classify_with_lmstudio', fake_classify)
-    monkeypatch.setattr(app_module, 'detect_language_with_lmstudio', fake_detect_lang)
+    # LM client removed - no longer need monkeypatch
 
     with flask_app.test_client() as c:
         yield c

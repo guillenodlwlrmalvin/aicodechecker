@@ -4,14 +4,88 @@
 <section class="card" style="max-width: 1200px; margin: 0 auto; width: 100%;">
 	<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
 		<h2 style="margin:0;">Activity Submissions</h2>
-		<a href="{{ url_for('teacher_dashboard') }}" class="button">Back to Dashboard</a>
+		<div style="display: flex; gap: 8px; align-items: center;">
+			{% if submissions|length > 1 %}
+			<a href="{{ url_for('view_activity_submissions', activity_id=activity_id, check_plagiarism='true') }}" 
+			   class="button" style="background: #dc2626; color: white;">
+				🔍 Check for Plagiarism
+			</a>
+			{% endif %}
+			<a href="{{ url_for('teacher_dashboard') }}" class="button">Back to Dashboard</a>
+		</div>
 	</div>
 	<p class="muted" style="margin-top: 0;">Review and grade student submissions.</p>
+
+	{% if plagiarism_results %}
+	<div style="margin: 20px 0; padding: 16px; background: #fef2f2; border: 2px solid #dc2626; border-radius: 8px;">
+		<h3 style="margin: 0 0 12px 0; color: #dc2626; display: flex; align-items: center; gap: 8px;">
+			⚠️ Plagiarism Detection Results
+		</h3>
+		{% if plagiarism_results|length > 0 %}
+		<p style="margin: 0 0 12px 0; color: #7f1d1d; font-weight: 500;">
+			Found {{ plagiarism_results|length }} potential plagiarism case(s):
+		</p>
+		<div style="display: grid; gap: 12px;">
+			{% for match in plagiarism_results %}
+			<div style="padding: 12px; background: white; border-radius: 6px; border-left: 4px solid {% if match.is_identical %}#dc2626{% elif match.similarity >= 0.95 %}#ef4444{% else %}#f59e0b{% endif %};">
+				<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+					<div style="flex: 1;">
+						<strong style="color: #991b1b;">
+							{{ match.submission1_username }}
+							{% if match.is_identical %}
+							<span style="color: #dc2626; font-size: 0.9em;">(IDENTICAL)</span>
+							{% endif %}
+						</strong>
+						<span style="color: #666; margin: 0 8px;">vs</span>
+						<strong style="color: #991b1b;">
+							{{ match.submission2_username }}
+							{% if match.is_identical %}
+							<span style="color: #dc2626; font-size: 0.9em;">(IDENTICAL)</span>
+							{% endif %}
+						</strong>
+					</div>
+					<div style="display: flex; align-items: center; gap: 8px;">
+						<span class="badge" style="background: {% if match.similarity >= 0.95 %}#dc2626{% elif match.similarity >= 0.9 %}#ef4444{% else %}#f59e0b{% endif %}; color: white; font-size: 0.9em; font-weight: bold;">
+							{{ match.similarity_percent }}% Similar
+						</span>
+					</div>
+				</div>
+			</div>
+			{% endfor %}
+		</div>
+		{% else %}
+		<p style="margin: 0; color: #065f46; font-weight: 500;">
+			✓ No plagiarism detected. All submissions appear to be unique.
+		</p>
+		{% endif %}
+	</div>
+	{% endif %}
 
 	{% if submissions %}
 	<div style="display: grid; gap: 16px; margin-top: 20px;">
 		{% for submission in submissions %}
-		<div class="card" style="padding: 16px; border: 1px solid rgba(0,0,0,0.1);">
+		{% set is_flagged = false %}
+		{% set match_info = [] %}
+		{% if plagiarism_results %}
+			{% for match in plagiarism_results %}
+				{% if match.submission1_id == submission.id %}
+					{% set is_flagged = true %}
+					{% set _ = match_info.append({'username': match.submission2_username, 'similarity': match.similarity_percent}) %}
+				{% elif match.submission2_id == submission.id %}
+					{% set is_flagged = true %}
+					{% set _ = match_info.append({'username': match.submission1_username, 'similarity': match.similarity_percent}) %}
+				{% endif %}
+			{% endfor %}
+		{% endif %}
+		<div class="card" style="padding: 16px; border: 1px solid {% if is_flagged %}#dc2626{% else %}rgba(0,0,0,0.1){% endif %}; {% if is_flagged %}border-width: 2px; background: #fef2f2;{% endif %}">
+			{% if is_flagged %}
+			<div style="margin-bottom: 12px; padding: 8px; background: #fee2e2; border-radius: 4px; border-left: 3px solid #dc2626;">
+				<strong style="color: #dc2626; font-size: 0.9em;">⚠️ Plagiarism Flagged:</strong>
+				<span style="color: #991b1b; font-size: 0.85em; margin-left: 8px;">
+					Similar to: {% for info in match_info %}{{ info.username }} ({{ info.similarity }}%){% if not loop.last %}, {% endif %}{% endfor %}
+				</span>
+			</div>
+			{% endif %}
 			<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
 				<h4 style="margin: 0; font-size: 1.1em;">{{ submission.username }}</h4>
 				<div style="display: flex; gap: 8px; align-items: center;">
@@ -32,8 +106,14 @@
 			
 			{% if submission.content %}
 			<div style="margin: 12px 0; padding: 12px; background: var(--bg-surface-hover); border-radius: 4px; border: 1px solid var(--border-color);">
-				<strong style="color: var(--text-primary);">Text Submission:</strong>
-				<div style="margin-top: 8px; white-space: pre-wrap; color: var(--text-primary);">{{ submission.content }}</div>
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+					<strong style="color: var(--text-primary);">Text Submission:</strong>
+					<button type="button" class="analyze-code-btn" data-code-id="submission-code-{{ submission.id }}" style="font-size: 0.85em; padding: 4px 12px; background: #8b5cf6; color: white; border: none; border-radius: 4px; cursor: pointer;">
+						📋 Copy & Analyze Code
+					</button>
+				</div>
+				<textarea id="submission-code-{{ submission.id }}" style="display: none;">{{ submission.content }}</textarea>
+				<div id="submission-content-{{ submission.id }}" style="margin-top: 8px; white-space: pre-wrap; color: var(--text-primary);">{{ submission.content }}</div>
 			</div>
 			{% endif %}
 			
@@ -81,4 +161,59 @@
 	</div>
 	{% endif %}
 </section>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+	// Attach event listeners to all analyze code buttons
+	document.querySelectorAll('.analyze-code-btn').forEach(function(button) {
+		button.addEventListener('click', function() {
+			// Get code from hidden textarea element
+			const codeId = this.getAttribute('data-code-id');
+			const codeElement = document.getElementById(codeId);
+			if (!codeElement) {
+				console.error('Code element not found');
+				return;
+			}
+			const code = codeElement.value;
+			
+			// Copy code to clipboard
+			// Try modern clipboard API first
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				navigator.clipboard.writeText(code).then(function() {
+					console.log('Code copied to clipboard');
+				}).catch(function(err) {
+					console.error('Clipboard API failed:', err);
+					// Fallback to execCommand
+					copyWithExecCommand(code);
+				});
+			} else {
+				// Fallback to execCommand
+				copyWithExecCommand(code);
+			}
+			
+			// Navigate to code analysis with the code as query parameter
+			const encodedCode = encodeURIComponent(code);
+			window.location.href = '/code_analysis?code=' + encodedCode;
+		});
+	});
+	
+	function copyWithExecCommand(code) {
+		const tempTextarea = document.createElement('textarea');
+		tempTextarea.value = code;
+		tempTextarea.style.position = 'fixed';
+		tempTextarea.style.opacity = '0';
+		document.body.appendChild(tempTextarea);
+		tempTextarea.select();
+		
+		try {
+			document.execCommand('copy');
+			console.log('Code copied to clipboard');
+		} catch (err) {
+			console.error('Failed to copy code:', err);
+		}
+		
+		document.body.removeChild(tempTextarea);
+	}
+});
+</script>
 {% endblock %}

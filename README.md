@@ -152,9 +152,6 @@ SECRET_KEY=your-secret-key-here
 
 # Database Configuration
 DATABASE_PATH=database.sqlite3
-
-# LM Studio Configuration
-LM_STUDIO_URL=http://localhost:1234/v1
 ```
 
 ### **Supported File Types**
