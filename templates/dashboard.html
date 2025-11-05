@@ -256,9 +256,15 @@
 		});
 
 		// Clear button functionality
-		document.getElementById('clear-btn').addEventListener('click', function() {
+		document.getElementById('clear-btn').addEventListener('click', function(e) {
+			e.preventDefault();
+			e.stopPropagation();
+			
+			// Clear the input fields
 			document.getElementById('code-input').value = '';
 			document.getElementById('language-input').value = '';
+			
+			// Reset button states
 			document.getElementById('analyze-btn').disabled = true;
 			document.getElementById('analyze-hint').classList.remove('hidden');
 			document.getElementById('detected-badge').classList.add('hidden');
@@ -266,21 +272,38 @@
 			// Reset character counter
 			document.getElementById('char-count').textContent = '0';
 			document.getElementById('char-count').style.color = '#64748b';
+			
 			// Hide all result cards
 			document.querySelectorAll('.result-card').forEach(card => {
 				card.classList.add('hidden');
 			});
 			
-			// Switch back to code tab
-			document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
-			document.querySelector('.side-link[data-tab="code"]').classList.add('active');
+			// Ensure code section is visible (don't hide it first)
+			const codeSection = document.getElementById('code-section');
+			if (codeSection) {
+				codeSection.classList.remove('hidden');
+				codeSection.style.display = '';
+			}
 			
-			document.querySelectorAll('#code-section, #text-section, #upload-section, #history-section').forEach(section => {
+			// Ensure results section stays visible if it exists
+			const resultsSection = document.getElementById('results-section');
+			if (resultsSection) {
+				resultsSection.classList.remove('hidden');
+				resultsSection.style.display = '';
+			}
+			
+			// Switch back to code tab visually
+			document.querySelectorAll('.side-link').forEach(l => l.classList.remove('active'));
+			const codeLink = document.querySelector('.side-link[data-tab="code"]');
+			if (codeLink) {
+				codeLink.classList.add('active');
+			}
+			
+			// Hide other sections but keep code section visible
+			document.querySelectorAll('#upload-section, #history-section').forEach(section => {
 				section.classList.add('hidden');
 				section.style.display = 'none';
 			});
-			document.getElementById('code-section').classList.remove('hidden');
-			document.getElementById('results-section').classList.remove('hidden');
 		});
 
 			// Text UI removed
