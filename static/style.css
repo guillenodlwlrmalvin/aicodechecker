@@ -1183,4 +1183,71 @@ p {
 .result-card.feedback[data-source="Heuristic"] {
     border-left-color: var(--primary-purple);
     background: rgba(139, 92, 246, 0.05);
+}
+
+/* Code Execution Results */
+.execution-status {
+    margin-bottom: var(--spacing-md);
+}
+
+.execution-status p {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.execution-output,
+.execution-error {
+    margin-top: var(--spacing-md);
+}
+
+.execution-output h4,
+.execution-error h4 {
+    margin-bottom: var(--spacing-sm);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.execution-output pre {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border: 1px solid var(--border-color);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+.execution-error pre {
+    background: rgba(239, 68, 68, 0.1);
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.execution-time {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+}
+
+.execution-time p {
+    margin: 0;
+    font-size: 0.875rem;
+}
+
+.button.secondary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.button.secondary:disabled:hover {
+    transform: none;
+    background: var(--bg-surface);
+    border-color: var(--border-color);
 } 

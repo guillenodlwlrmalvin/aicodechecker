@@ -1,10 +1,12 @@
 import os
 import sqlite3
 import re
+import uuid
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, g, session, jsonify, send_file
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+from flask_socketio import SocketIO, emit, disconnect
 from models import initialize_database, get_user_by_username, create_user, create_analysis, get_recent_analyses, create_uploaded_file, get_uploaded_files
 from models import list_all_users, delete_user_and_related, get_user_count
 from models import approve_user, get_user_by_id, update_user_role
@@ -21,12 +23,20 @@ from detector import analyze_code
 from code_check import check_code, validate_language_match
 from deep_learning_detector import analyze_code_deep_learning
 from enhanced_detector import analyze_code_with_enhanced_dataset
+from code_executor import CodeExecutor
+from interactive_executor import InteractiveExecutor
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'
 app.config['DATABASE'] = 'database.sqlite3'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+# Initialize SocketIO
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
+# Store active execution sessions
+active_sessions = {}
 
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {
@@ -526,6 +536,89 @@ def detect_enhanced():
         app.logger.error(f"Enhanced code analysis failed: {e}")
         flash('An error occurred during enhanced analysis. Please try again.', 'error')
         return redirect(url_for('dashboard'))
+
+
+@app.route('/run_code', methods=['POST'])
+def run_code():
+    """Execute code and return results"""
+    if not g.user:
+        return jsonify({'success': False, 'error': 'Please log in to continue.'}), 401
+    
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Invalid request. No data provided.'}), 400
+            
+        code = data.get('code', '').strip()
+        language = data.get('language', 'auto').strip().lower()
+        input_data = data.get('input', '').strip()  # Get input data if provided
+        
+        if not code:
+            return jsonify({'success': False, 'error': 'Please provide code to execute.'}), 400
+        
+        # Auto-detect language if needed
+        if language == 'auto' or not language:
+            # Try to detect from code - check Java first (more distinctive patterns)
+            code_lower = code.lower()
+            
+            # Java indicators (check first)
+            java_indicators = [
+                'public class',
+                'public static void main',
+                'import java.',
+                'system.out.println',
+                'scanner',
+                'private ',
+                'protected ',
+                'extends ',
+                'implements '
+            ]
+            
+            # Python indicators
+            python_indicators = [
+                'def ',
+                'if __name__',
+                'print(',
+                'import '  # Generic import (but Java has 'import java.')
+            ]
+            
+            has_java = any(indicator in code_lower for indicator in java_indicators)
+            has_python = any(indicator in code_lower for indicator in python_indicators)
+            
+            # Prioritize Java if both are present (Java patterns are more specific)
+            if has_java:
+                language = 'java'
+            elif has_python:
+                language = 'python'
+            else:
+                return jsonify({
+                    'success': False, 
+                    'error': 'Could not auto-detect language. Please specify Python or Java.'
+                }), 400
+        
+        # Log the execution attempt for debugging
+        app.logger.info(f"Executing {language} code (length: {len(code)} chars)")
+        
+        # Execute the code with optional input
+        result = CodeExecutor.execute_code(code, language, input_data=input_data if input_data else None)
+        
+        # Log the result for debugging
+        app.logger.info(f"Execution result: success={result.get('success')}, return_code={result.get('return_code')}")
+        if not result.get('success'):
+            app.logger.warning(f"Execution error: {result.get('error', 'Unknown error')}")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        app.logger.error(f"Code execution failed: {e}\n{error_trace}")
+        return jsonify({
+            'success': False,
+            'error': f'An error occurred during code execution: {str(e)}\n\nTraceback:\n{error_trace}',
+            'output': '',
+            'execution_time': 0
+        }), 500
 
 
 @app.route('/clear_history', methods=['POST'])
@@ -1156,5 +1249,217 @@ def view_student_submission(student_id, activity_id):
                           submission=submission, 
                           activity=dict(activity))
 
+# WebSocket events for interactive code execution
+@socketio.on('start_interactive_execution')
+def handle_start_execution(data):
+    """Start an interactive code execution session"""
+    from flask import request as flask_request
+    # Get user from session
+    user_id = flask_request.sid
+    # We'll need to get user info differently - check session
+    if 'user_id' not in session:
+        emit('execution_error', {'error': 'Not authenticated'})
+        return
+    
+    user = get_user_by_username(app.config['DATABASE'], session['user_id'])
+    if not user:
+        emit('execution_error', {'error': 'User not found'})
+        return
+    
+    try:
+        code = data.get('code', '').strip()
+        language = data.get('language', 'auto').strip().lower()
+        
+        if not code:
+            emit('execution_error', {'error': 'No code provided'})
+            return
+        
+        # Auto-detect language if needed
+        if language == 'auto' or not language:
+            # Try to detect from code - check Java first (more distinctive patterns)
+            code_lower = code.lower()
+            
+            # Java indicators (check first)
+            java_indicators = [
+                'public class',
+                'public static void main',
+                'import java.',
+                'system.out.println',
+                'scanner',
+                'private ',
+                'protected ',
+                'extends ',
+                'implements '
+            ]
+            
+            # Python indicators
+            python_indicators = [
+                'def ',
+                'if __name__',
+                'print(',
+                'import '  # Generic import (but Java has 'import java.')
+            ]
+            
+            has_java = any(indicator in code_lower for indicator in java_indicators)
+            has_python = any(indicator in code_lower for indicator in python_indicators)
+            
+            # Prioritize Java if both are present (Java patterns are more specific)
+            if has_java:
+                language = 'java'
+            elif has_python:
+                language = 'python'
+            else:
+                emit('execution_error', {'error': 'Could not auto-detect language'})
+                return
+        
+        # Create session ID
+        session_id = str(uuid.uuid4())
+        
+        # Create interactive executor
+        executor = InteractiveExecutor(code, language, session_id)
+        result = executor.start()
+        
+        if result.get('success'):
+            # Store session
+            active_sessions[session_id] = {
+                'executor': executor,
+                'user_id': user['id'],
+                'language': language,
+                'socket_id': flask_request.sid
+            }
+            emit('execution_started', {'session_id': session_id})
+            
+            # Start output polling
+            socketio.start_background_task(poll_output, session_id, flask_request.sid)
+        else:
+            emit('execution_error', {'error': result.get('error', 'Failed to start execution')})
+            
+    except Exception as e:
+        app.logger.error(f"Error starting interactive execution: {e}")
+        emit('execution_error', {'error': f'Error: {str(e)}'})
+
+
+@socketio.on('send_input')
+def handle_send_input(data):
+    """Send input to a running execution"""
+    from flask import request as flask_request
+    if 'user_id' not in session:
+        emit('execution_error', {'error': 'Not authenticated'})
+        return
+    
+    try:
+        session_id = data.get('session_id')
+        input_data = data.get('input', '')
+        
+        if not session_id or session_id not in active_sessions:
+            emit('execution_error', {'error': 'Invalid session ID'})
+            return
+        
+        session_data = active_sessions[session_id]
+        
+        # Verify user owns this session
+        user = get_user_by_username(app.config['DATABASE'], session['user_id'])
+        if not user or session_data['user_id'] != user['id']:
+            emit('execution_error', {'error': 'Unauthorized'})
+            return
+        
+        executor = session_data['executor']
+        result = executor.send_input(input_data)
+        
+        if not result.get('success'):
+            emit('execution_error', {'error': result.get('error')})
+            
+    except Exception as e:
+        app.logger.error(f"Error sending input: {e}")
+        emit('execution_error', {'error': f'Error: {str(e)}'})
+
+
+@socketio.on('stop_execution')
+def handle_stop_execution(data):
+    """Stop a running execution"""
+    from flask import request as flask_request
+    if 'user_id' not in session:
+        emit('execution_error', {'error': 'Not authenticated'})
+        return
+    
+    try:
+        session_id = data.get('session_id')
+        
+        if session_id and session_id in active_sessions:
+            session_data = active_sessions[session_id]
+            
+            # Verify user owns this session
+            user = get_user_by_username(app.config['DATABASE'], session['user_id'])
+            if user and session_data['user_id'] == user['id']:
+                executor = session_data['executor']
+                executor.stop()
+                del active_sessions[session_id]
+                emit('execution_stopped', {'session_id': session_id})
+        else:
+            emit('execution_error', {'error': 'Invalid session ID'})
+            
+    except Exception as e:
+        app.logger.error(f"Error stopping execution: {e}")
+        emit('execution_error', {'error': f'Error: {str(e)}'})
+
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Clean up sessions when user disconnects"""
+    # Clean up all sessions for this user
+    if 'user_id' in session:
+        user = get_user_by_username(app.config['DATABASE'], session['user_id'])
+        if user:
+            sessions_to_remove = [
+                sid for sid, data in active_sessions.items()
+                if data['user_id'] == user['id']
+            ]
+            for sid in sessions_to_remove:
+                try:
+                    active_sessions[sid]['executor'].stop()
+                    del active_sessions[sid]
+                except Exception:
+                    pass
+
+
+def poll_output(session_id, socket_id):
+    """Background task to poll for output and emit to client"""
+    while session_id in active_sessions:
+        try:
+            session_data = active_sessions[session_id]
+            executor = session_data['executor']
+            
+            output_data = executor.get_output()
+            
+            if output_data.get('output'):
+                socketio.emit('execution_output', {
+                    'session_id': session_id,
+                    'output': output_data['output']
+                }, room=socket_id)
+            
+            if output_data.get('error'):
+                socketio.emit('execution_error_output', {
+                    'session_id': session_id,
+                    'error': output_data['error']
+                }, room=socket_id)
+            
+            if output_data.get('done'):
+                socketio.emit('execution_finished', {
+                    'session_id': session_id,
+                    'return_code': output_data.get('return_code')
+                }, room=socket_id)
+                
+                # Clean up
+                if session_id in active_sessions:
+                    del active_sessions[session_id]
+                break
+            
+            socketio.sleep(0.1)  # Poll every 100ms
+            
+        except Exception as e:
+            app.logger.error(f"Error polling output for session {session_id}: {e}")
+            break
+
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)

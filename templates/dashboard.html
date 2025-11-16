@@ -30,6 +30,7 @@
 					</label>
 					<div class="actions">
 						<button id="analyze-btn" class="button primary" type="submit">Analyze</button>
+						<button id="run-interactive-btn" class="button secondary" type="button">Run Interactive</button>
 						<button id="clear-btn" class="button" type="button">Clear</button>
 						<span id="analyze-hint" class="muted">Paste code to enable</span>
 						{% if detected_language %}
@@ -39,13 +40,38 @@
 						{% endif %}
 					</div>
 				</form>
+				<!-- Interactive Terminal Section -->
+				<div id="interactive-terminal" class="result-card hidden" style="margin-top: 2rem; display: none;">
+					<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+						<h3 style="margin: 0;">Interactive Terminal</h3>
+						<button id="stop-interactive-btn" class="button danger small" type="button" style="display: none;">Stop Execution</button>
+					</div>
+					<div id="terminal-output" class="terminal-output" style="background: #1a1a2e; color: #f8fafc; padding: 1rem; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 14px; min-height: 300px; max-height: 500px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; border: 1px solid var(--border-color);"></div>
+					<div id="terminal-input-container" style="margin-top: 1rem; display: none;">
+						<div style="display: flex; gap: 0.5rem; align-items: center;">
+							<span style="color: var(--text-primary); font-weight: bold; font-size: 16px;">&gt;</span>
+							<input type="text" id="terminal-input" class="terminal-input" placeholder="Type input here and press Enter..." style="flex: 1; padding: 0.5rem; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-primary); font-family: 'Courier New', monospace; font-size: 14px;" autocomplete="off">
+							<button id="send-input-btn" class="button small" type="button">Send</button>
+						</div>
+						
+					</div>
+				</div>
+
+				<!-- Code Execution Results Section -->
+				<div id="execution-results" class="result-card hidden" style="margin-top: 2rem; display: none;">
+					<h3>Code Execution Results</h3>
+					<div id="execution-status" class="execution-status"></div>
+					<div id="execution-output" class="execution-output"></div>
+					<div id="execution-error" class="execution-error"></div>
+					<div id="execution-time" class="execution-time"></div>
+				</div>
+
 				<!-- Analysis Results Section -->
 				<div style="margin-top: 2rem;">
 				{% if enhanced_result %}
 				<div id="enhanced-result-card" class="result-card feedback {% if 'AI' in enhanced_result.final_prediction.label %}is-ai{% elif 'Human' in enhanced_result.final_prediction.label %}is-human{% else %}is-uncertain{% endif %}">
 					<h3>Enhanced Code Analysis Result</h3>
-					<p class="score">Score: {{ '%.1f'|format(enhanced_result.final_prediction.score) }} / 100 ({{ enhanced_result.final_prediction.score|int }}%) — {{ enhanced_result.final_prediction.label }}</p>
-					<p class="confidence">Confidence: {{ '%.1f'|format(enhanced_result.final_prediction.confidence * 100) }}%</p>
+					<p class="score">{{ enhanced_result.final_prediction.score|int }}% — {% if 'AI' in enhanced_result.final_prediction.label %}AI-generated{% elif 'Human' in enhanced_result.final_prediction.label %}Human-written{% else %}{% if enhanced_result.final_prediction.score >= 50 %}AI-generated{% else %}Human-written{% endif %}{% endif %}</p>
 					{% if enhanced_result.enhanced_analysis.highlighted_html %}
 					<details open>
 						<summary>Highlighted Indicators</summary>
@@ -212,6 +238,40 @@
 			} else {
 				charCountElement.style.color = '#64748b';
 			}
+			
+			// Initialize run interactive button state
+			const runInteractiveBtn = document.getElementById('run-interactive-btn');
+			if (runInteractiveBtn) {
+				runInteractiveBtn.disabled = charCount === 0;
+			}
+			
+			// Auto-analyze if code was loaded from query parameter
+			const urlParams = new URLSearchParams(window.location.search);
+			const codeFromUrl = urlParams.get('code');
+			if (codeFromUrl && codeInput.value.trim()) {
+				// Code was loaded from URL, auto-analyze after a short delay
+				setTimeout(function() {
+					const analyzeForm = document.getElementById('analyze-form');
+					const analyzeBtn = document.getElementById('analyze-btn');
+					
+					// Enable analyze button if it's disabled
+					if (analyzeBtn && analyzeBtn.disabled) {
+						analyzeBtn.disabled = false;
+					}
+					
+					// Show a brief message that analysis is starting
+					const analyzeHint = document.getElementById('analyze-hint');
+					if (analyzeHint) {
+						analyzeHint.textContent = 'Auto-analyzing code...';
+						analyzeHint.style.color = '#8b5cf6';
+					}
+					
+					// Submit the form to trigger analysis
+					if (analyzeForm) {
+						analyzeForm.submit();
+					}
+				}, 500); // Small delay to ensure page is fully loaded
+			}
 		});
 
 		// Tab switching functionality
@@ -255,6 +315,13 @@
 			});
 		});
 
+		// Helper function to escape HTML
+		function escapeHtml(text) {
+			const div = document.createElement('div');
+			div.textContent = text;
+			return div.innerHTML;
+		}
+
 		// Clear button functionality
 		document.getElementById('clear-btn').addEventListener('click', function(e) {
 			e.preventDefault();
@@ -266,16 +333,28 @@
 			
 			// Reset button states
 			document.getElementById('analyze-btn').disabled = true;
+			document.getElementById('run-interactive-btn').disabled = true;
 			document.getElementById('analyze-hint').classList.remove('hidden');
+			
+			// Stop any running interactive session
+			if (currentSessionId && socket) {
+				socket.emit('stop_execution', { session_id: currentSessionId });
+				currentSessionId = null;
+			}
+			
+			// Hide interactive terminal
+			document.getElementById('interactive-terminal').classList.add('hidden');
+			document.getElementById('interactive-terminal').style.display = 'none';
 			document.getElementById('detected-badge').classList.add('hidden');
 			
 			// Reset character counter
 			document.getElementById('char-count').textContent = '0';
 			document.getElementById('char-count').style.color = '#64748b';
 			
-			// Hide all result cards
+			// Hide all result cards including execution results
 			document.querySelectorAll('.result-card').forEach(card => {
 				card.classList.add('hidden');
+				card.style.display = 'none';
 			});
 			
 			// Ensure code section is visible (don't hide it first)
@@ -327,11 +406,14 @@
 			} else {
 				charCountElement.style.color = '#64748b'; // default gray
 			}
+			const runInteractiveBtn = document.getElementById('run-interactive-btn');
 			if (code) {
 				analyzeBtn.disabled = false;
+				if (runInteractiveBtn) runInteractiveBtn.disabled = false;
 				analyzeHint.classList.add('hidden');
 			} else {
 				analyzeBtn.disabled = true;
+				if (runInteractiveBtn) runInteractiveBtn.disabled = true;
 				analyzeHint.classList.remove('hidden');
 			}
 		});
@@ -533,5 +615,204 @@
 				}
 			}
 		});
+
+		// Socket.IO connection for interactive execution
+		let socket = null;
+		let currentSessionId = null;
+
+		// Initialize Socket.IO connection
+		function initSocket() {
+			if (!socket) {
+				socket = io();
+				
+				socket.on('execution_started', function(data) {
+					currentSessionId = data.session_id;
+					const stopBtn = document.getElementById('stop-interactive-btn');
+					const inputContainer = document.getElementById('terminal-input-container');
+					if (stopBtn) stopBtn.style.display = 'block';
+					if (inputContainer) inputContainer.style.display = 'block';
+					appendToTerminal('Execution started. You can now interact with your program.\n', 'system');
+					appendToTerminal('Type your input below and press Enter. Your input will be shown above with a ">" prefix.\n\n', 'system');
+				});
+				
+				socket.on('execution_output', function(data) {
+					if (data.session_id === currentSessionId) {
+						appendToTerminal(data.output, 'output');
+					}
+				});
+				
+				socket.on('execution_error_output', function(data) {
+					if (data.session_id === currentSessionId) {
+						appendToTerminal(data.error, 'error');
+					}
+				});
+				
+				socket.on('execution_finished', function(data) {
+					if (data.session_id === currentSessionId) {
+						appendToTerminal(`\n[Program finished with return code: ${data.return_code || 0}]\n`, 'system');
+						const stopBtn = document.getElementById('stop-interactive-btn');
+						const inputContainer = document.getElementById('terminal-input-container');
+						if (stopBtn) stopBtn.style.display = 'none';
+						if (inputContainer) inputContainer.style.display = 'none';
+						currentSessionId = null;
+					}
+				});
+				
+				socket.on('execution_error', function(data) {
+					appendToTerminal(`\n[Error: ${data.error}]\n`, 'error');
+					const stopBtn = document.getElementById('stop-interactive-btn');
+					const inputContainer = document.getElementById('terminal-input-container');
+					if (stopBtn) stopBtn.style.display = 'none';
+					if (inputContainer) inputContainer.style.display = 'none';
+					currentSessionId = null;
+				});
+				
+				socket.on('execution_stopped', function(data) {
+					if (data.session_id === currentSessionId) {
+						appendToTerminal('\n[Execution stopped by user]\n', 'system');
+						const stopBtn = document.getElementById('stop-interactive-btn');
+						const inputContainer = document.getElementById('terminal-input-container');
+						if (stopBtn) stopBtn.style.display = 'none';
+						if (inputContainer) inputContainer.style.display = 'none';
+						currentSessionId = null;
+					}
+				});
+			}
+		}
+
+		function appendToTerminal(text, type) {
+			const terminal = document.getElementById('terminal-output');
+			if (!terminal) return;
+			
+			const span = document.createElement('span');
+			
+			if (type === 'error') {
+				span.style.color = '#fca5a5';
+			} else if (type === 'system') {
+				span.style.color = '#94a3b8';
+				span.style.fontStyle = 'italic';
+			} else if (type === 'input') {
+				span.style.color = '#a78bfa';
+				span.style.fontWeight = 'bold';
+			} else if (type === 'user-input') {
+				span.style.color = '#60a5fa';
+				span.style.fontWeight = '500';
+			} else {
+				span.style.color = '#f8fafc';
+			}
+			
+			span.textContent = text;
+			terminal.appendChild(span);
+			terminal.scrollTop = terminal.scrollHeight;
+		}
+
+		// Run Interactive button functionality - set up after DOM is ready
+		function setupInteractiveButton() {
+			const runInteractiveBtn = document.getElementById('run-interactive-btn');
+			if (runInteractiveBtn) {
+				runInteractiveBtn.addEventListener('click', function(e) {
+				e.preventDefault();
+				e.stopPropagation();
+				
+				const code = document.getElementById('code-input').value.trim();
+				const language = document.getElementById('language-input').value || 'auto';
+				
+				if (!code) {
+					showMessage('Please paste some code to run.', 'error');
+					return;
+				}
+				
+				// Initialize socket if not already done
+				initSocket();
+				
+				// Hide regular execution results, show interactive terminal
+				const execResults = document.getElementById('execution-results');
+				if (execResults) {
+					execResults.classList.add('hidden');
+					execResults.style.display = 'none';
+				}
+				const interactiveTerminal = document.getElementById('interactive-terminal');
+				if (interactiveTerminal) {
+					interactiveTerminal.classList.remove('hidden');
+					interactiveTerminal.style.display = 'block';
+				}
+				
+				// Clear terminal
+				const terminalOutput = document.getElementById('terminal-output');
+				if (terminalOutput) {
+					terminalOutput.innerHTML = '';
+				}
+				const stopBtn = document.getElementById('stop-interactive-btn');
+				if (stopBtn) {
+					stopBtn.style.display = 'none';
+				}
+				const inputContainer = document.getElementById('terminal-input-container');
+				if (inputContainer) {
+					inputContainer.style.display = 'none';
+				}
+				
+				// Start execution
+				socket.emit('start_interactive_execution', {
+					code: code,
+					language: language
+				});
+				
+					appendToTerminal('Starting interactive execution...\n', 'system');
+				});
+			}
+
+			// Stop Interactive button
+			const stopInteractiveBtn = document.getElementById('stop-interactive-btn');
+			if (stopInteractiveBtn) {
+				stopInteractiveBtn.addEventListener('click', function(e) {
+					e.preventDefault();
+					if (currentSessionId && socket) {
+						socket.emit('stop_execution', { session_id: currentSessionId });
+					}
+				});
+			}
+
+			// Terminal input handling
+			const terminalInput = document.getElementById('terminal-input');
+			const sendInputBtn = document.getElementById('send-input-btn');
+			
+			function sendTerminalInput() {
+				if (currentSessionId && socket && terminalInput && terminalInput.value.trim() !== '') {
+					const inputValue = terminalInput.value;
+					const input = inputValue + '\n';
+					
+					// Show what the user typed in the terminal
+					appendToTerminal(`> ${inputValue}\n`, 'user-input');
+					
+					// Send the input to the program
+					socket.emit('send_input', {
+						session_id: currentSessionId,
+						input: input
+					});
+					
+					// Clear the input field
+					terminalInput.value = '';
+				}
+			}
+			
+			if (sendInputBtn) {
+				sendInputBtn.addEventListener('click', sendTerminalInput);
+			}
+			if (terminalInput) {
+				terminalInput.addEventListener('keypress', function(e) {
+					if (e.key === 'Enter') {
+						sendTerminalInput();
+					}
+				});
+			}
+		}
+
+		// Set up interactive button when DOM is ready
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', setupInteractiveButton);
+		} else {
+			// DOM is already loaded
+			setupInteractiveButton();
+		}
 	</script>
 {% endblock %} 
