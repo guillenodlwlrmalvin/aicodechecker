@@ -404,6 +404,19 @@ def update_user_role(db_path: str, user_id: int, role: str) -> None:
         conn.close()
 
 
+def update_user_password(db_path: str, user_id: int, password_hash: str) -> None:
+    """Update a user's password hash."""
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (password_hash, user_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # Group Management Functions
 def create_group(db_path: str, name: str, description: str, teacher_id: int) -> int:
     """Create a new group/section"""
