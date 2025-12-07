@@ -217,9 +217,11 @@ class EnhancedCodeDetector:
             predictions.append(enhanced_result['ai_score']); weights.append(0.40)
         
         final_score = sum(p * w for p, w in zip(predictions, weights)) / sum(weights) if predictions else 50.0
-        if final_score > 60: final_label = 'AI-generated'
-        elif final_score < 40: final_label = 'Human-written'
-        else: final_label = 'Uncertain'
+        # Map every score to one of two buckets: AI or Human (no "Uncertain")
+        if final_score >= 50:
+            final_label = 'AI-generated'
+        else:
+            final_label = 'Human-written'
         return {
             'label': final_label,
             'score': final_score,

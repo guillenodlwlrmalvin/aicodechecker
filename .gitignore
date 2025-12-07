@@ -1,36 +1,14 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.env
 
-# Virtual Environment
-venv/
-env/
-ENV/
-
-# Database
-*.sqlite3
-*.db
-database.sqlite3
-
-# Coverage reports
-.coverage
-htmlcov/
-.coverage.*
-coverage.xml
-*.cover
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
+# Setup scripts with secrets
+setup_google_oauth.ps1
+setup_google_oauth.sh
+setup_google_oauth.bat
+start_app.ps1
 
 # Large files excluded
 AIGCodeSet/all_data_with_ada_embeddings_will_be_splitted_into_train_test_set.csv

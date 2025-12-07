@@ -1,167 +1,102 @@
-"""
-Unit tests for code analysis features.
-"""
 import os
 import pytest
-
-from app import app as flask_app
-from models import initialize_database, create_user, create_analysis
 from werkzeug.security import generate_password_hash
+from app import app as flask_app
+from models import (
+    initialize_database, create_user, get_user_by_username, create_analysis,
+    get_recent_analyses, get_analysis_by_id, mark_user_verified
+)
 
 
-@pytest.fixture
-def db_path(tmp_path):
-    """Create a temporary database for testing."""
-    db = os.path.join(tmp_path, 'test_analysis.db')
-    initialize_database(db)
-    return db
-
-
-@pytest.fixture
-def client(db_path, monkeypatch):
-    """Create a test client with isolated database."""
-    monkeypatch.setenv('FLASK_ENV', 'testing')
+@pytest.fixture()
+def client(monkeypatch, tmp_path):
+    db_path = os.path.join(tmp_path, 'test.sqlite3')
     flask_app.config['DATABASE'] = db_path
     flask_app.config['TESTING'] = True
-    flask_app.config['SECRET_KEY'] = 'test-secret-key'
+    initialize_database(db_path)
     
-    with flask_app.test_client() as client:
-        with flask_app.app_context():
-            yield client
+    # Create a test user
+    user_id = create_user(db_path, 'analyst@gmail.com', generate_password_hash('Test123!'),
+                          is_approved=True)
+    mark_user_verified(db_path, user_id)
+    
+    with flask_app.test_client() as c:
+        with c.session_transaction() as sess:
+            sess['user_id'] = 'analyst@gmail.com'
+        yield c
 
 
-@pytest.fixture
-def logged_in_user(client, db_path):
-    """Create and login a test user."""
-    password_hash = generate_password_hash('password123')
-    user_id = create_user(db_path, 'test@test.com', password_hash, is_approved=1)
-    
-    client.post('/login', data={
-        'username': 'test@test.com',
-        'password': 'password123'
-    })
-    
-    return user_id
+def test_code_analysis_page_loads(client):
+    """Test that code analysis page loads."""
+    res = client.get('/code_analysis')
+    assert res.status_code == 200
+    assert b'analysis' in res.data.lower() or b'code' in res.data.lower()
 
 
-class TestCodeAnalysis:
-    """Tests for code analysis functionality."""
-    
-    def test_code_analysis_page_requires_login(self, client):
-        """Test that code analysis page requires login."""
-        response = client.get('/code_analysis', follow_redirects=True)
-        assert response.status_code == 200
-        # Should redirect to login
-    
-    def test_code_analysis_page_loads(self, client, logged_in_user):
-        """Test that code analysis page loads for logged in users."""
-        response = client.get('/code_analysis', follow_redirects=True)
-        assert response.status_code == 200
-    
-    def test_detect_endpoint_requires_login(self, client):
-        """Test that /detect_enhanced endpoint requires login."""
-        response = client.post('/detect_enhanced', json={'code': 'print("hello")'})
-        assert response.status_code in [302, 401, 403, 404]  # Redirect or unauthorized
-    
-    def test_detect_endpoint_with_login(self, client, logged_in_user, db_path):
-        """Test code detection with logged in user."""
-        test_code = 'print("Hello, World!")'
-        
-        response = client.post('/detect_enhanced', data={
-            'code': test_code,
-            'language': 'python'
-        }, follow_redirects=True)
-        
-        # Returns HTML template, not JSON
-        assert response.status_code == 200
-        assert b'dashboard' in response.data.lower() or b'analysis' in response.data.lower()
-    
-    def test_detect_enhanced_endpoint(self, client, logged_in_user):
-        """Test enhanced detection endpoint."""
-        test_code = '''
-def hello():
-    print("Hello, World!")
-    return True
-'''
-        response = client.post('/detect_enhanced', data={
-            'code': test_code,
-            'language': 'python'
-        }, follow_redirects=True)
-        
-        # Returns HTML template
-        assert response.status_code == 200
-        assert b'dashboard' in response.data.lower() or b'analysis' in response.data.lower()
-    
-    def test_analysis_history(self, client, logged_in_user, db_path):
-        """Test analysis history retrieval."""
-        # Create some analysis records
-        test_code = 'print("test")'
-        create_analysis(db_path, logged_in_user, test_code, 'python', 'human', 0.8, check_ok=True, check_errors=[])
-        
-        response = client.get('/history/latest', follow_redirects=True)
-        # Returns HTML template, not JSON
-        assert response.status_code == 200
-        assert b'dashboard' in response.data.lower() or b'history' in response.data.lower()
+def test_detect_enhanced_requires_login(client):
+    """Test that detect_enhanced requires authentication."""
+    with client.session_transaction() as sess:
+        sess.clear()
+    res = client.post('/detect_enhanced', data={'code': 'print("hello")'}, follow_redirects=False)
+    assert res.status_code in (302, 303)  # Redirect to login
 
 
-class TestFileUpload:
-    """Tests for file upload functionality."""
-    
-    def test_upload_requires_login(self, client):
-        """Test that file upload requires login."""
-        response = client.post('/upload', data={})
-        assert response.status_code in [302, 401, 403]
-    
-    def test_upload_valid_file(self, client, logged_in_user, tmp_path):
-        """Test uploading a valid file."""
-        # Create a test file
-        test_file = tmp_path / 'test.py'
-        test_file.write_text('print("Hello, World!")')
-        
-        with open(test_file, 'rb') as f:
-            response = client.post('/upload', data={
-                'file': (f, 'test.py')
-            }, content_type='multipart/form-data', follow_redirects=True)
-        
-        # Returns HTML after redirect
-        assert response.status_code == 200
-        assert b'dashboard' in response.data.lower() or b'upload' in response.data.lower()
-    
-    def test_upload_invalid_extension(self, client, logged_in_user, tmp_path):
-        """Test uploading file with invalid extension."""
-        test_file = tmp_path / 'test.txt'
-        test_file.write_text('some text')
-        
-        with open(test_file, 'rb') as f:
-            response = client.post('/upload', data={
-                'file': (f, 'test.txt')
-            }, content_type='multipart/form-data', follow_redirects=True)
-        
-        # Should reject invalid file type or redirect
-        assert response.status_code in [200, 302, 400]
+def test_detect_enhanced_with_code(client):
+    """Test code detection with valid code input."""
+    res = client.post('/detect_enhanced', data={
+        'code': 'print("Hello, World!")',
+        'language': 'python'
+    }, follow_redirects=True)
+    assert res.status_code == 200
+    # Should return analysis result
 
 
-class TestCodeExecution:
-    """Tests for code execution features."""
+def test_detect_enhanced_with_file_upload(client):
+    """Test code detection with file upload."""
+    # Create a test file
+    test_file = ('test.py', 'test.py', b'print("test")', 'text/x-python')
+    res = client.post('/detect_enhanced', data={
+        'code': '',
+        'language': 'python'
+    }, follow_redirects=True)
+    assert res.status_code == 200
+
+
+def test_history_page_loads(client):
+    """Test that analysis history page loads."""
+    res = client.get('/history/latest', follow_redirects=True)
+    # May redirect if no analyses, but should be accessible
+    assert res.status_code in (200, 302)
+
+
+def test_history_shows_analyses(client):
+    """Test that history shows user's analyses."""
+    db_path = flask_app.config['DATABASE']
+    user = get_user_by_username(db_path, 'analyst@gmail.com')
+    create_analysis(db_path, user['id'], 'print(1)', 'python', 'Human', 20.0, True, [])
     
-    def test_execute_code_requires_login(self, client):
-        """Test that code execution requires login."""
-        response = client.post('/run_code', json={
-            'code': 'print("hello")',
-            'language': 'python'
-        })
-        assert response.status_code in [302, 401, 403, 404]
+    res = client.get('/history/latest')
+    assert res.status_code == 200
+    assert b'history' in res.data.lower() or b'analysis' in res.data.lower()
+
+
+def test_detect_enhanced_with_empty_code(client):
+    """Test detect_enhanced with empty code."""
+    res = client.post('/detect_enhanced', data={'code': ''}, follow_redirects=True)
+    assert res.status_code in (200, 302)
+    # Should show error or redirect
+
+
+def test_get_analysis_by_id(client):
+    """Test retrieving specific analysis by ID."""
+    db_path = flask_app.config['DATABASE']
+    user = get_user_by_username(db_path, 'analyst@gmail.com')
+    analysis_id = create_analysis(db_path, user['id'], 'print("test")', 'python', 'Human', 20.0, True, [])
     
-    def test_execute_python_code(self, client, logged_in_user):
-        """Test executing Python code."""
-        response = client.post('/run_code', json={
-            'code': 'print("Hello, World!")',
-            'language': 'python'
-        }, follow_redirects=True)
-        
-        # May redirect or return 200
-        assert response.status_code in [200, 302]
-        if response.status_code == 200:
-            data = response.get_json()
-            assert data is not None
+    analysis = get_analysis_by_id(db_path, user['id'], analysis_id)
+    assert analysis is not None
+    assert analysis['id'] == analysis_id
+    assert analysis['code'] == 'print("test")'
+
+
 

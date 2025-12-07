@@ -1,112 +1,101 @@
-"""
-Unit tests for notification functionality.
-"""
 import os
 import pytest
 from werkzeug.security import generate_password_hash
-
 from app import app as flask_app
 from models import (
-    initialize_database, create_user, create_notification,
-    get_user_notifications, get_unread_notification_count,
-    mark_notification_as_read, mark_all_notifications_as_read
+    initialize_database, create_user, get_user_by_username, create_notification,
+    get_user_notifications, get_unread_notification_count, mark_notification_as_read,
+    mark_all_notifications_as_read, mark_user_verified
 )
 
 
-@pytest.fixture
-def db_path(tmp_path):
-    """Create a temporary database for testing."""
-    db = os.path.join(tmp_path, 'test_notifications.db')
-    initialize_database(db)
-    return db
-
-
-@pytest.fixture
-def client(db_path, monkeypatch):
-    """Create a test client with isolated database."""
-    monkeypatch.setenv('FLASK_ENV', 'testing')
+@pytest.fixture()
+def client(monkeypatch, tmp_path):
+    db_path = os.path.join(tmp_path, 'test.sqlite3')
     flask_app.config['DATABASE'] = db_path
     flask_app.config['TESTING'] = True
-    flask_app.config['SECRET_KEY'] = 'test-secret-key'
+    initialize_database(db_path)
     
-    with flask_app.test_client() as client:
-        with flask_app.app_context():
-            yield client
+    user_id = create_user(db_path, 'notifyuser@gmail.com', generate_password_hash('Test123!'),
+                          is_approved=True)
+    mark_user_verified(db_path, user_id)
+    
+    with flask_app.test_client() as c:
+        with c.session_transaction() as sess:
+            sess['user_id'] = 'notifyuser@gmail.com'
+        yield c
 
 
-@pytest.fixture
-def logged_in_user(client, db_path):
-    """Create and login a test user."""
-    password_hash = generate_password_hash('password123')
-    user_id = create_user(db_path, 'test@test.com', password_hash, is_approved=1)
+def test_get_notifications(client):
+    """Test getting user notifications."""
+    db_path = flask_app.config['DATABASE']
+    user = get_user_by_username(db_path, 'notifyuser@gmail.com')
+    create_notification(db_path, user['id'], 'Test Notification', 'This is a test', 'info')
     
-    client.post('/login', data={
-        'username': 'test@test.com',
-        'password': 'password123'
-    })
-    
-    return user_id
+    res = client.get('/api/notifications')
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data is not None
+    assert len(data) > 0 or 'notifications' in str(data).lower()
 
 
-class TestNotifications:
-    """Tests for notification functionality."""
+def test_get_unread_count(client):
+    """Test getting unread notification count."""
+    db_path = flask_app.config['DATABASE']
+    user = get_user_by_username(db_path, 'notifyuser@gmail.com')
+    create_notification(db_path, user['id'], 'Unread 1', 'Message 1', 'info')
+    create_notification(db_path, user['id'], 'Unread 2', 'Message 2', 'info')
     
-    def test_create_notification(self, db_path, logged_in_user):
-        """Test creating a notification."""
-        notification_id = create_notification(
-            db_path, logged_in_user, 'test_type', 'Test Title',
-            'Test message', logged_in_user, 'user'
-        )
-        
-        assert notification_id > 0
+    count = get_unread_notification_count(db_path, user['id'])
+    assert count >= 2
+
+
+def test_mark_notification_as_read(client):
+    """Test marking a notification as read."""
+    db_path = flask_app.config['DATABASE']
+    user = get_user_by_username(db_path, 'notifyuser@gmail.com')
+    notif_id = create_notification(db_path, user['id'], 'Read Test', 'Message', 'info')
     
-    def test_get_user_notifications(self, db_path, logged_in_user):
-        """Test retrieving user notifications."""
-        # Create some notifications
-        create_notification(db_path, logged_in_user, 'type1', 'Title 1', 'Message 1', 
-                          logged_in_user, 'user')
-        create_notification(db_path, logged_in_user, 'type2', 'Title 2', 'Message 2',
-                          logged_in_user, 'user')
-        
-        notifications = get_user_notifications(db_path, logged_in_user)
-        assert len(notifications) >= 2
+    res = client.post(f'/api/notifications/{notif_id}/read', follow_redirects=True)
+    assert res.status_code == 200
     
-    def test_get_unread_count(self, db_path, logged_in_user):
-        """Test getting unread notification count."""
-        # Create unread notifications
-        create_notification(db_path, logged_in_user, 'type1', 'Title 1', 'Message 1',
-                          logged_in_user, 'user')
-        create_notification(db_path, logged_in_user, 'type2', 'Title 2', 'Message 2',
-                          logged_in_user, 'user')
-        
-        count = get_unread_notification_count(db_path, logged_in_user)
-        assert count >= 2
+    notifications = get_user_notifications(db_path, user['id'])
+    read_notif = next((n for n in notifications if n['id'] == notif_id), None)
+    assert read_notif is not None
+    assert read_notif.get('is_read') == 1
+
+
+def test_mark_all_notifications_as_read(client):
+    """Test marking all notifications as read."""
+    db_path = flask_app.config['DATABASE']
+    user = get_user_by_username(db_path, 'notifyuser@gmail.com')
+    create_notification(db_path, user['id'], 'Unread 1', 'Message 1', 'info')
+    create_notification(db_path, user['id'], 'Unread 2', 'Message 2', 'info')
     
-    def test_mark_notification_as_read(self, db_path, logged_in_user):
-        """Test marking a notification as read."""
-        notification_id = create_notification(
-            db_path, logged_in_user, 'type1', 'Title', 'Message',
-            logged_in_user, 'user'
-        )
-        
-        mark_notification_as_read(db_path, notification_id, logged_in_user)
-        
-        # Verify it's marked as read
-        notifications = get_user_notifications(db_path, logged_in_user, unread_only=True)
-        unread_ids = [n['id'] for n in notifications]
-        assert notification_id not in unread_ids
+    res = client.post('/api/notifications/read-all', follow_redirects=True)
+    assert res.status_code == 200
     
-    def test_mark_all_notifications_as_read(self, db_path, logged_in_user):
-        """Test marking all notifications as read."""
-        # Create multiple notifications
-        create_notification(db_path, logged_in_user, 'type1', 'Title 1', 'Message 1',
-                          logged_in_user, 'user')
-        create_notification(db_path, logged_in_user, 'type2', 'Title 2', 'Message 2',
-                          logged_in_user, 'user')
-        
-        mark_all_notifications_as_read(db_path, logged_in_user)
-        
-        # Verify all are read
-        count = get_unread_notification_count(db_path, logged_in_user)
-        assert count == 0
+    count = get_unread_notification_count(db_path, user['id'])
+    assert count == 0
+
+
+def test_notification_types(client):
+    """Test different notification types."""
+    db_path = flask_app.config['DATABASE']
+    user = get_user_by_username(db_path, 'notifyuser@gmail.com')
+    
+    create_notification(db_path, user['id'], 'Info', 'Info message', 'info')
+    create_notification(db_path, user['id'], 'Warning', 'Warning message', 'warning')
+    create_notification(db_path, user['id'], 'Success', 'Success message', 'success')
+    create_notification(db_path, user['id'], 'Error', 'Error message', 'error')
+    
+    notifications = get_user_notifications(db_path, user['id'])
+    assert len(notifications) >= 4
+
+
+def test_check_deadlines_api(client):
+    """Test checking deadlines API endpoint."""
+    res = client.get('/api/notifications/check-deadlines', follow_redirects=True)
+    # Should return JSON or redirect
+    assert res.status_code in (200, 302, 401)
 

@@ -23,9 +23,9 @@
 					<input type="hidden" id="language-input" name="language" value="{{ detected_language or 'auto' }}">
 					<label>
 						<span>Paste your code</span>
-						<textarea id="code-input" name="code" rows="14" placeholder="Paste code here..." maxlength="10000">{{ code_input or '' }}</textarea>
+						<textarea id="code-input" name="code" rows="14" placeholder="Paste code here...">{{ code_input or '' }}</textarea>
 						<div class="input-counter">
-							<span id="char-count">0</span> / 10,000 characters
+							<span id="char-count">0</span> / 1,000 lines
 						</div>
 					</label>
 					<div class="actions">
@@ -223,32 +223,55 @@
 	</section>
 
 	<script>
-		// Initialize character counter on page load
+		// Initialize line counter on page load
 		document.addEventListener('DOMContentLoaded', function() {
 			const codeInput = document.getElementById('code-input');
 			const charCountElement = document.getElementById('char-count');
-			const charCount = codeInput.value.length;
-			charCountElement.textContent = charCount;
+			const analyzeHint = document.getElementById('analyze-hint');
+			const analyzeBtn = document.getElementById('analyze-btn');
+			const runInteractiveBtn = document.getElementById('run-interactive-btn');
 			
-			// Set initial color
-			if (charCount > 9000) {
+			let lines = codeInput.value ? codeInput.value.split('\n') : [];
+			if (lines.length > 1000) {
+				// Trim any preloaded code to 1,000 lines
+				lines = lines.slice(0, 1000);
+				codeInput.value = lines.join('\n');
+				if (analyzeHint) {
+					analyzeHint.textContent = 'Line limit reached (1,000). Please remove lines to continue.';
+					analyzeHint.classList.remove('hidden');
+					analyzeHint.style.color = '#ef4444';
+				}
+			}
+			const lineCount = lines.length;
+			charCountElement.textContent = lineCount;
+			
+			// Set initial color based on line count
+			if (lineCount > 900) {
 				charCountElement.style.color = '#ef4444';
-			} else if (charCount > 8000) {
+			} else if (lineCount > 800) {
 				charCountElement.style.color = '#f59e0b';
 			} else {
 				charCountElement.style.color = '#64748b';
 			}
 			
-			// Initialize run interactive button state
-			const runInteractiveBtn = document.getElementById('run-interactive-btn');
+			// Initialize button states
+			const atLimit = lineCount >= 1000;
 			if (runInteractiveBtn) {
-				runInteractiveBtn.disabled = charCount === 0;
+				runInteractiveBtn.disabled = lineCount === 0 || atLimit;
+			}
+			if (analyzeBtn) {
+				analyzeBtn.disabled = lineCount === 0 || atLimit;
+			}
+			if (atLimit && analyzeHint) {
+				analyzeHint.textContent = 'Line limit reached (1,000). Please remove lines to continue.';
+				analyzeHint.classList.remove('hidden');
+				analyzeHint.style.color = '#ef4444';
 			}
 			
 			// Auto-analyze if code was loaded from query parameter
 			const urlParams = new URLSearchParams(window.location.search);
 			const codeFromUrl = urlParams.get('code');
-			if (codeFromUrl && codeInput.value.trim()) {
+			if (codeFromUrl && codeInput.value.trim() && lineCount < 1000) {
 				// Code was loaded from URL, auto-analyze after a short delay
 				setTimeout(function() {
 					const analyzeForm = document.getElementById('analyze-form');
@@ -393,28 +416,53 @@
 			const analyzeBtn = document.getElementById('analyze-btn');
 			const analyzeHint = document.getElementById('analyze-hint');
 			
-			// Update character counter
-			const charCount = this.value.length;
+			// Update line counter
+			let lines = this.value ? this.value.split('\n') : [];
+			let lineCount = lines.length;
 			const charCountElement = document.getElementById('char-count');
-			charCountElement.textContent = charCount;
+			charCountElement.textContent = lineCount;
 			
 			// Change color when approaching limit
-			if (charCount > 9000) {
+			if (lineCount > 1000) {
+				// Hard limit reached: trim to 1000 lines
+				lines = lines.slice(0, 1000);
+				this.value = lines.join('\n');
+				lineCount = 1000;
+				charCountElement.textContent = 1000;
 				charCountElement.style.color = '#ef4444'; // red
-			} else if (charCount > 8000) {
+			} else if (lineCount > 900) {
+				charCountElement.style.color = '#ef4444'; // red
+			} else if (lineCount > 800) {
 				charCountElement.style.color = '#f59e0b'; // orange
 			} else {
 				charCountElement.style.color = '#64748b'; // default gray
 			}
 			const runInteractiveBtn = document.getElementById('run-interactive-btn');
-			if (code) {
+			
+			const overLimit = lineCount >= 1000;
+			
+			if (code && !overLimit) {
 				analyzeBtn.disabled = false;
 				if (runInteractiveBtn) runInteractiveBtn.disabled = false;
-				analyzeHint.classList.add('hidden');
+				if (analyzeHint) {
+					analyzeHint.classList.add('hidden');
+					analyzeHint.style.color = '#64748b';
+				}
+			} else if (code && overLimit) {
+				analyzeBtn.disabled = true;
+				if (runInteractiveBtn) runInteractiveBtn.disabled = true;
+				if (analyzeHint) {
+					analyzeHint.textContent = 'Line limit reached (1,000). Please remove lines to continue.';
+					analyzeHint.classList.remove('hidden');
+					analyzeHint.style.color = '#ef4444';
+				}
 			} else {
 				analyzeBtn.disabled = true;
 				if (runInteractiveBtn) runInteractiveBtn.disabled = true;
-				analyzeHint.classList.remove('hidden');
+				if (analyzeHint) {
+					analyzeHint.classList.remove('hidden');
+					analyzeHint.style.color = '#64748b';
+				}
 			}
 		});
 

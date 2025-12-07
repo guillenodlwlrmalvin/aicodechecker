@@ -148,11 +148,71 @@ The deep learning algorithm extracts hundreds of features:
 # Flask Configuration
 FLASK_ENV=development
 FLASK_DEBUG=True
-SECRET_KEY=your-secret-key-here
+FLASK_SECRET_KEY=your-secret-key-here
 
 # Database Configuration
 DATABASE_PATH=database.sqlite3
+
+# Gmail SMTP (for email verification)
+GMAIL_USER=your-email@gmail.com
+GMAIL_PASS=your-app-password
+
+# Google OAuth (for Google Sign-In)
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:5000/auth/google/callback
 ```
+
+### **Google OAuth Setup**
+
+1. **Quick Setup (Windows)**
+   ```bash
+   # Run the setup script
+   setup_google_oauth.bat
+   
+   # Then start the app
+   python app.py
+   ```
+
+2. **Quick Setup (Linux/Mac)**
+   ```bash
+   # Run the setup script
+   source setup_google_oauth.sh
+   
+   # Then start the app
+   python app.py
+   ```
+
+3. **Manual Setup (Using .env file - Recommended)**
+   
+   Create a `.env` file in the project root:
+   ```env
+   GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=your-google-client-secret
+   GOOGLE_REDIRECT_URI=http://localhost:5000/auth/google/callback
+   GMAIL_USER=your-email@gmail.com
+   GMAIL_PASS=your-gmail-app-password
+   FLASK_SECRET_KEY=your-secret-key-here
+   ```
+   
+   **Note:** The `.env` file is automatically ignored by Git to protect your secrets.
+   
+   **Alternative: Set environment variables directly**
+   ```bash
+   # Windows (PowerShell)
+   $env:GOOGLE_CLIENT_ID="your-google-client-id.apps.googleusercontent.com"
+   $env:GOOGLE_CLIENT_SECRET="your-google-client-secret"
+   $env:GOOGLE_REDIRECT_URI="http://localhost:5000/auth/google/callback"
+   
+   # Linux/Mac
+   export GOOGLE_CLIENT_ID="your-google-client-id.apps.googleusercontent.com"
+   export GOOGLE_CLIENT_SECRET="your-google-client-secret"
+   export GOOGLE_REDIRECT_URI="http://localhost:5000/auth/google/callback"
+   ```
+
+4. **Google Cloud Console Configuration**
+   - Ensure the redirect URI `http://localhost:5000/auth/google/callback` is added to your OAuth 2.0 Client ID in Google Cloud Console
+   - The redirect URI must match exactly (including http vs https, port number, and path)
 
 ### **Supported File Types**
 - **Python**: `.py`, `.pyw`

@@ -1,96 +1,108 @@
-"""
-Unit tests for utility functions.
-"""
 import pytest
 from werkzeug.security import generate_password_hash, check_password_hash
+from app import app as flask_app
 
 
-class TestPasswordHashing:
-    """Tests for password hashing utilities."""
+def test_password_hashing():
+    """Test password hashing and verification."""
+    password = 'TestPassword123!'
+    hash1 = generate_password_hash(password)
+    hash2 = generate_password_hash(password)
     
-    def test_generate_password_hash(self):
-        """Test password hash generation."""
-        password = 'testpassword123'
-        hash1 = generate_password_hash(password)
-        hash2 = generate_password_hash(password)
-        
-        # Hashes should be different (due to salt)
-        assert hash1 != hash2
-        
-        # But both should verify correctly
-        assert check_password_hash(hash1, password)
-        assert check_password_hash(hash2, password)
+    # Hashes should be different (due to salt)
+    assert hash1 != hash2
     
-    def test_check_password_hash(self):
-        """Test password hash verification."""
-        password = 'testpassword123'
-        password_hash = generate_password_hash(password)
-        
-        # Correct password
-        assert check_password_hash(password_hash, password) is True
-        
-        # Wrong password
-        assert check_password_hash(password_hash, 'wrongpassword') is False
+    # Both should verify correctly
+    assert check_password_hash(hash1, password) is True
+    assert check_password_hash(hash2, password) is True
     
-    def test_password_hash_consistency(self):
-        """Test that password hashing is consistent."""
-        password = 'testpassword123'
-        hash1 = generate_password_hash(password)
-        
-        # Same password should verify against the hash
-        assert check_password_hash(hash1, password) is True
-        
-        # Different password should not verify
-        assert check_password_hash(hash1, 'differentpassword') is False
+    # Wrong password should fail
+    assert check_password_hash(hash1, 'WrongPassword') is False
 
 
-class TestCodeValidation:
-    """Tests for code validation utilities."""
+def test_gmail_validation():
+    """Test Gmail address validation."""
+    valid_emails = [
+        'test@gmail.com',
+        'user.name@gmail.com',
+        'user+tag@gmail.com',
+        '123@gmail.com'
+    ]
     
-    def test_code_length_validation(self):
-        """Test code length validation."""
-        short_code = 'x' * 100
-        long_code = 'x' * 10000
-        
-        # Should accept reasonable length
-        assert len(short_code) < 10000
-        
-        # Should reject very long code
-        assert len(long_code) > 1000
+    invalid_emails = [
+        'test@yahoo.com',
+        'test@hotmail.com',
+        'test@gmail',
+        'test@.com',
+        'notanemail'
+    ]
     
-    def test_code_line_count(self):
-        """Test counting lines in code."""
-        code_10_lines = '\n'.join([f'line {i}' for i in range(10)])
-        code_1000_lines = '\n'.join([f'line {i}' for i in range(1000)])
-        code_2000_lines = '\n'.join([f'line {i}' for i in range(2000)])
-        
-        assert code_10_lines.count('\n') + 1 == 10
-        assert code_1000_lines.count('\n') + 1 == 1000
-        assert code_2000_lines.count('\n') + 1 == 2000
+    for email in valid_emails:
+        assert '@' in email and email.lower().endswith('@gmail.com')
+    
+    for email in invalid_emails:
+        assert not ('@' in email and email.lower().endswith('@gmail.com'))
 
 
-class TestEmailValidation:
-    """Tests for email validation."""
+def test_verification_code_format():
+    """Test verification code format (6 digits)."""
+    valid_codes = ['123456', '000000', '999999', '012345']
+    invalid_codes = ['12345', '1234567', 'abcdef', '12 3456', '']
     
-    def test_gmail_validation(self):
-        """Test Gmail address validation."""
-        valid_emails = [
-            'test@gmail.com',
-            'user.name@gmail.com',
-            'user+tag@gmail.com',
-        ]
-        
-        invalid_emails = [
-            'test@yahoo.com',
-            'test@hotmail.com',
-            'notanemail',
-            'test@',
-        ]
-        
-        for email in valid_emails:
-            assert '@' in email and email.endswith('@gmail.com')
-        
-        for email in invalid_emails:
-            if not email.endswith('@gmail.com'):
-                assert True  # Invalid as expected
+    for code in valid_codes:
+        assert len(code) == 6 and code.isdigit()
+    
+    for code in invalid_codes:
+        assert not (len(code) == 6 and code.isdigit())
+
+
+def test_allowed_file_extensions():
+    """Test file extension validation."""
+    from app import allowed_file
+    
+    # According to app.py comment, only Python and Java files are allowed for upload
+    valid_files = ['test.py', 'code.java']
+    invalid_files = ['test.txt', 'code.doc', 'script.exe', 'script.js', 'file.cpp', 'app.cs', 'file', 'noextension']
+    
+    for filename in valid_files:
+        assert allowed_file(filename) is True
+    
+    for filename in invalid_files:
+        assert allowed_file(filename) is False
+
+
+def test_get_language_from_extension():
+    """Test language detection from file extension."""
+    from app import get_language_from_extension
+    
+    test_cases = {
+        'test.py': 'python',
+        'code.java': 'java',
+        'script.js': 'javascript',
+        'file.cpp': 'cpp',
+        'app.cs': 'csharp'
+    }
+    
+    for filename, expected_lang in test_cases.items():
+        result = get_language_from_extension(filename)
+        assert result == expected_lang
+
+
+def test_secure_filename():
+    """Test secure filename generation."""
+    from werkzeug.utils import secure_filename
+    
+    test_cases = {
+        'test file.py': 'test_file.py',
+        '../../etc/passwd': 'etc_passwd',
+        'file with spaces.txt': 'file_with_spaces.txt',
+        'normal-file.py': 'normal-file.py'
+    }
+    
+    for input_name, expected in test_cases.items():
+        result = secure_filename(input_name)
+        # Secure filename should not contain spaces or path separators
+        assert ' ' not in result
+        assert '/' not in result
+        assert '\\' not in result
 

@@ -8,7 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
-<body>
+<body data-has-user="{{ 'true' if g.user else 'false' }}" data-is-student="{{ 'true' if g.user and (g.user.role == 'student' or g.user.get('role') == 'student') else 'false' }}">
     <div class="background-animation"></div>
     
     <nav class="navbar">
@@ -24,12 +24,12 @@
                     {% if not (g.user.is_admin or g.user['is_admin']) %}
                         <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
                     {% endif %}
+                    <a href="{{ url_for('code_analysis') }}" class="nav-link">Code Analysis</a>
                     {% if g.user.role == 'student' or g.user.get('role') == 'student' %}
                         <a href="{{ url_for('browse_groups') }}" class="nav-link">Browse Groups</a>
                     {% endif %}
                     {% if g.user.role in ['teacher', 'admin'] or g.user.get('role') in ['teacher', 'admin'] or g.user.is_admin or g.user.get('is_admin') %}
                         <a href="{{ url_for('groups') }}" class="nav-link">Groups</a>
-                        <a href="{{ url_for('code_analysis') }}" class="nav-link">Code Analysis</a>
                     {% endif %}
                     {% if g.user.is_admin or g.user['is_admin'] %}
                         <a href="{{ url_for('admin_dashboard') }}" class="nav-link">Admin</a>
@@ -250,16 +250,17 @@
                 document.querySelector('.theme-icon').textContent = '☀️';
             }
             
-            // Load notifications
-            {% if g.user %}
-            loadNotifications();
-            // Check deadlines for students
-            {% if g.user.role == 'student' or g.user.get('role') == 'student' %}
-            fetch('/api/notifications/check-deadlines');
-            {% endif %}
-            // Refresh notifications every 30 seconds
-            setInterval(loadNotifications, 30000);
-            {% endif %}
+            const dataset = document.body.dataset || {};
+            const hasUser = dataset.hasUser === 'true';
+            const isStudent = dataset.isStudent === 'true';
+
+            if (hasUser) {
+                loadNotifications();
+                if (isStudent) {
+                    fetch('/api/notifications/check-deadlines');
+                }
+                setInterval(loadNotifications, 30000);
+            }
         });
     </script>
 </body>

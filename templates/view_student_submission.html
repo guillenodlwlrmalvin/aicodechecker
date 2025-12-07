@@ -11,6 +11,14 @@
 		<h3 style="margin: 0 0 8px 0;">Activity: {{ activity.title }}</h3>
 		<p style="margin: 0; color: #666;">Student: <strong>{{ submission.username }}</strong></p>
 		<p style="margin: 0; color: #666;">Submitted: {{ submission.submitted_at[:16] }}</p>
+		{% if submission.ai_label %}
+		<p style="margin: 8px 0 0 0;">
+			{% set is_ai = 'AI' in submission.ai_label %}
+			<span class="badge" style="background: {% if is_ai %}#dc2626{% else %}#16a34a{% endif %}; color: white;">
+				{{ submission.ai_label }} — {{ submission.ai_score|round(1) }}%
+			</span>
+		</p>
+		{% endif %}
 		{% if submission.grade is not none %}
 		<p style="margin: 8px 0 0 0;">
 			<span class="badge" style="background: #3b82f6; color: white;">Grade: {{ submission.grade }}</span>
@@ -24,6 +32,42 @@
 			{{ submission.content }}
 		</div>
 	</div>
+
+	{% if detailed_analysis %}
+	<div style="margin-bottom: 20px;">
+		<h4 style="margin: 0 0 8px 0;">AI/Human Analysis Details</h4>
+		<div style="padding: 16px; border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb;">
+			<p style="margin: 0 0 8px 0; color: #374151;">
+				<strong>Overall Prediction:</strong>
+				{{ detailed_analysis.final_prediction.label }} — {{ detailed_analysis.final_prediction.score|round(1) }}%
+			</p>
+			{% if detailed_analysis.final_prediction.method_breakdown %}
+			<p style="margin: 0 0 8px 0; color: #4b5563; font-size: 0.9em;">
+				<strong>Method Breakdown:</strong>
+				Basic {{ detailed_analysis.final_prediction.method_breakdown.basic|round(1) }}%, 
+				Deep {{ detailed_analysis.final_prediction.method_breakdown.deep_learning|round(1) }}%, 
+				Enhanced {{ detailed_analysis.final_prediction.method_breakdown.enhanced|round(1) }}%
+			</p>
+			{% endif %}
+			{% if detailed_analysis.enhanced_analysis and detailed_analysis.enhanced_analysis.code_metrics %}
+			<p style="margin: 0 0 8px 0; color: #4b5563; font-size: 0.9em;">
+				<strong>Code Metrics:</strong>
+				{{ detailed_analysis.enhanced_analysis.code_metrics.total_lines }} lines,
+				{{ detailed_analysis.enhanced_analysis.code_metrics.comment_lines }} comment lines,
+				avg line length {{ detailed_analysis.enhanced_analysis.code_metrics.avg_line_length|round(1) }}.
+			</p>
+			{% endif %}
+			{% if detailed_analysis.enhanced_analysis and detailed_analysis.enhanced_analysis.highlighted_html %}
+			<div style="margin-top: 12px;">
+				<h5 style="margin: 0 0 6px 0; font-size: 0.95em;">Highlighted Indicators</h5>
+				<div class="code-view" style="max-height: 320px; overflow: auto; border-radius: 4px; border: 1px solid #d1d5db;">
+					{{ detailed_analysis.enhanced_analysis.highlighted_html | safe }}
+				</div>
+			</div>
+			{% endif %}
+		</div>
+	</div>
+	{% endif %}
 
 	{% if submission.feedback %}
 	<div style="margin-bottom: 20px; padding: 12px; background: #fef3c7; border-radius: 4px;">

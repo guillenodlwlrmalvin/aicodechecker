@@ -90,9 +90,9 @@
 				</td>
 				<td style="padding: 8px;">
 					{% if u.is_approved %}
-						<span class="badge" style="background:#16a34a; color:white;">Approved</span>
+						<span class="badge" style="background:#16a34a; color:white;">Verified</span>
 					{% else %}
-						<span class="badge" style="background:#f59e0b; color:white;">Pending</span>
+						<span class="badge" style="background:#f59e0b; color:white;">Not Verified</span>
 					{% endif %}
 					{% if u.reset_requested %}
 						<span class="badge" style="background:#f59e0b; color:#111827; margin-left:6px;">Reset Requested</span>
@@ -102,11 +102,6 @@
 					<div class="actions-container">
 						<div class="actions-buttons">
 							{% if u.role != 'admin' %}
-								{% if not u.is_approved %}
-								<form method="POST" action="{{ url_for('admin_approve_user', user_id=u.id) }}" style="display:inline;">
-									<button type="submit" class="button">Approve</button>
-								</form>
-								{% endif %}
 								<form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}" style="display:inline;" onsubmit="return confirm('Delete user \'{{ u.username }}\'? This will remove all their data.');">
 									<button type="submit" class="button danger">Delete</button>
 								</form>
