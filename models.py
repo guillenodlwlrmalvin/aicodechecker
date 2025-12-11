@@ -172,6 +172,17 @@ def initialize_database(db_path: str) -> None:
             # Migrate existing users: set role based on is_admin
             conn.execute("UPDATE users SET role = 'admin' WHERE is_admin = 1")
             conn.execute("UPDATE users SET role = 'student' WHERE is_admin = 0")
+        # Store email verification token/code for self-service verification
+        if 'verification_token' not in col_names:
+            conn.execute("ALTER TABLE users ADD COLUMN verification_token TEXT")
+        # Store verification code expiration time
+        if 'verification_code_expires' not in col_names:
+            conn.execute("ALTER TABLE users ADD COLUMN verification_code_expires TEXT")
+        # Google OAuth columns
+        if 'google_id' not in col_names:
+            conn.execute("ALTER TABLE users ADD COLUMN google_id TEXT")
+        if 'avatar' not in col_names:
+            conn.execute("ALTER TABLE users ADD COLUMN avatar TEXT")
         
         # Migration: ensure analysis table columns exist
         analysis_cols = conn.execute("PRAGMA table_info(analyses)").fetchall()
@@ -193,6 +204,20 @@ def initialize_database(db_path: str) -> None:
             # Table doesn't exist yet, will be created with proper schema
             pass
         
+        # Migration: ensure activity_submissions has AI analysis columns
+        try:
+            submission_cols = conn.execute("PRAGMA table_info(activity_submissions)").fetchall()
+            submission_col_names = {c[1] for c in submission_cols}
+            if 'ai_label' not in submission_col_names:
+                conn.execute("ALTER TABLE activity_submissions ADD COLUMN ai_label TEXT")
+            if 'ai_score' not in submission_col_names:
+                conn.execute("ALTER TABLE activity_submissions ADD COLUMN ai_score REAL")
+            if 'ai_explanation' not in submission_col_names:
+                conn.execute("ALTER TABLE activity_submissions ADD COLUMN ai_explanation TEXT")
+        except sqlite3.OperationalError:
+            # Table might not exist yet; creation above will include these columns next run
+            pass
+        
         conn.commit()
     finally:
         conn.close()
@@ -202,6 +227,17 @@ def get_user_by_username(db_path: str, username: str) -> Optional[Dict[str, Any]
     conn = _connect(db_path)
     try:
         cur = conn.execute("SELECT * FROM users WHERE username = ?", (username,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_user_by_google_id(db_path: str, google_id: str) -> Optional[Dict[str, Any]]:
+    """Lookup user by Google OAuth subject identifier."""
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute("SELECT * FROM users WHERE google_id = ?", (google_id,))
         row = cur.fetchone()
         return dict(row) if row else None
     finally:
@@ -243,6 +279,196 @@ def create_user(db_path: str, username: str, password_hash: str, is_admin: bool 
         )
         conn.commit()
         return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def upsert_user_from_google(
+    db_path: str,
+    google_id: str,
+    email: str,
+    name: str,
+    avatar: Optional[str] = None,
+) -> tuple[Dict[str, Any], bool]:
+    """
+    Create or update a user based on Google OAuth information.
+    Returns: (user_dict, is_new_user)
+    - If a user with google_id exists, return it (is_new_user=False).
+    - Else if a user with matching email exists, link google_id + avatar and mark verified (is_new_user=False).
+    - Else create a new user (auto-approved) with a placeholder password (is_new_user=True).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info(f"Connecting to database: {db_path}")
+        conn = _connect(db_path)
+        
+        # 1) Existing Google-linked user
+        logger.debug(f"Checking for existing Google user with google_id: {google_id[:20]}...")
+        cur = conn.execute("SELECT * FROM users WHERE google_id = ?", (google_id,))
+        row = cur.fetchone()
+        if row:
+            logger.info(f"Found existing Google-linked user: {row['username']}")
+            return dict(row), False
+
+        # 2) Existing email-based user
+        logger.debug(f"Checking for existing user with email: {email}")
+        cur = conn.execute("SELECT * FROM users WHERE username = ?", (email,))
+        row = cur.fetchone()
+        if row:
+            logger.info(f"Found existing email-based user: {email}, linking Google account")
+            user_id = row['id']
+            # Don't auto-approve when linking - keep existing approval status
+            try:
+                conn.execute(
+                    "UPDATE users SET google_id = ?, avatar = ? WHERE id = ?",
+                    (google_id, avatar, user_id),
+                )
+                conn.commit()
+                logger.info(f"✓ Successfully linked Google account to user ID {user_id}")
+                cur = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+                return dict(cur.fetchone()), False
+            except Exception as e:
+                logger.error(f"✗ Failed to update user with Google info: {e}", exc_info=True)
+                conn.rollback()
+                raise
+
+        # 3) New user – requires email verification (NOT auto-approved)
+        logger.info(f"Creating new Google user: {email}")
+        placeholder_password = ''  # password not used for Google-only accounts
+        import random
+        from datetime import timedelta
+        verification_code = str(random.randint(100000, 999999))  # Generate 6-digit code
+        expires_at = (datetime.utcnow() + timedelta(minutes=10)).isoformat()  # 10 minutes expiration
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, is_approved, role, google_id, avatar, verification_token, verification_code_expires)
+                VALUES (?, ?, ?, 0, 0, 'student', ?, ?, ?, ?)
+                """,
+                (
+                    email,
+                    placeholder_password,
+                    datetime.utcnow().isoformat(),
+                    google_id,
+                    avatar,
+                    verification_code,
+                    expires_at,
+                ),
+            )
+            user_id = cur.lastrowid
+            conn.commit()
+            logger.info(f"✓ Successfully created new Google user with ID: {user_id} (requires verification)")
+            cur = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            user_dict = dict(cur.fetchone())
+            logger.info(f"✓ Retrieved user data for ID {user_id}: username={user_dict.get('username')}")
+            return user_dict, True
+        except Exception as e:
+            logger.error(f"✗ Failed to create new Google user: {e}", exc_info=True)
+            conn.rollback()
+            raise
+    except Exception as e:
+        logger.error(f"✗ Database error in upsert_user_from_google: {e}", exc_info=True)
+        raise
+    finally:
+        if 'conn' in locals():
+            conn.close()
+            logger.debug("Database connection closed")
+
+
+def set_user_verification_token(db_path: str, user_id: int, token: str, expires_at: str = None) -> None:
+    """Set or update the email verification token/code for a user."""
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE users SET verification_token = ?, verification_code_expires = ? WHERE id = ?",
+            (token, expires_at, user_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_by_verification_token(db_path: str, token: str) -> Optional[Dict[str, Any]]:
+    """Look up a user by their email verification token/code."""
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute("SELECT * FROM users WHERE verification_token = ?", (token,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_user_by_verification_code(db_path: str, code: str) -> Optional[Dict[str, Any]]:
+    """Look up a user by their 6-digit verification code and check if it's expired."""
+    from datetime import datetime
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute("SELECT * FROM users WHERE verification_token = ?", (code,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        
+        user = dict(row)
+        expires_at = user.get('verification_code_expires')
+        
+        # Check if code has expired
+        if expires_at:
+            try:
+                expires = datetime.fromisoformat(expires_at)
+                if datetime.utcnow() > expires:
+                    return None  # Code expired
+            except (ValueError, TypeError):
+                pass  # Invalid date format, treat as not expired for backward compatibility
+        
+        return user
+    finally:
+        conn.close()
+
+
+def mark_user_verified(db_path: str, user_id: int) -> None:
+    """Mark user as verified (is_approved=1) and clear token/code."""
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE users SET is_approved = 1, verification_token = NULL, verification_code_expires = NULL WHERE id = ?",
+            (user_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_user_password(db_path: str, user_id: int, password_hash: str) -> None:
+    """Update a user's password hash."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    conn = _connect(db_path)
+    try:
+        logger.info(f"Updating password for user_id: {user_id}, hash_length: {len(password_hash) if password_hash else 0}")
+        result = conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (password_hash, user_id),
+        )
+        conn.commit()
+        logger.info(f"Password update executed, rows affected: {result.rowcount}")
+        
+        # Verify the update
+        cur = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
+        row = cur.fetchone()
+        if row:
+            saved_hash = row['password_hash']
+            logger.info(f"Password saved successfully, saved_hash_length: {len(saved_hash) if saved_hash else 0}")
+            if saved_hash != password_hash:
+                logger.error(f"Password hash mismatch! Expected length: {len(password_hash)}, Saved length: {len(saved_hash) if saved_hash else 0}")
+        else:
+            logger.error(f"User {user_id} not found after password update")
+    except Exception as e:
+        logger.error(f"Error updating password: {e}", exc_info=True)
+        raise
     finally:
         conn.close()
 
@@ -399,19 +625,6 @@ def update_user_role(db_path: str, user_id: int, role: str) -> None:
     try:
         is_admin = 1 if role == 'admin' else 0
         conn.execute("UPDATE users SET role = ?, is_admin = ? WHERE id = ?", (role, is_admin, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def update_user_password(db_path: str, user_id: int, password_hash: str) -> None:
-    """Update a user's password hash."""
-    conn = _connect(db_path)
-    try:
-        conn.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
-            (password_hash, user_id),
-        )
         conn.commit()
     finally:
         conn.close()
@@ -685,6 +898,23 @@ def submit_activity(db_path: str, activity_id: int, student_id: int, content: st
         conn.close()
 
 
+def update_submission_analysis(db_path: str, submission_id: int, ai_label: str, ai_score: float, ai_explanation: str) -> None:
+    """Attach AI/human analysis results to an existing activity submission."""
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            """
+            UPDATE activity_submissions
+            SET ai_label = ?, ai_score = ?, ai_explanation = ?
+            WHERE id = ?
+            """,
+            (ai_label, ai_score, ai_explanation, submission_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_activity_submissions(db_path: str, activity_id: int) -> List[Dict[str, Any]]:
     """Get all submissions for an activity"""
     conn = _connect(db_path)
@@ -710,6 +940,9 @@ def get_activity_submissions(db_path: str, activity_id: int) -> List[Dict[str, A
                 submission['code_content'] = submission['file_content']
             else:
                 submission['code_content'] = ''
+            # Add 'score' as alias for 'grade' for backward compatibility
+            if 'grade' in submission:
+                submission['score'] = submission['grade']
         return submissions
     finally:
         conn.close()

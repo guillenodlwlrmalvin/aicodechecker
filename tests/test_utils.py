@@ -1,96 +1,124 @@
-"""
-Unit tests for utility functions.
-"""
+"""Tests for Utility Functions (7 tests)."""
 import pytest
 from werkzeug.security import generate_password_hash, check_password_hash
+from app import allowed_file, get_language_from_extension
 
 
-class TestPasswordHashing:
-    """Tests for password hashing utilities."""
+def test_password_hashing():
+    """Test password hashing and verification."""
+    password = 'Test123!'
+    hash1 = generate_password_hash(password)
+    hash2 = generate_password_hash(password)
     
-    def test_generate_password_hash(self):
-        """Test password hash generation."""
-        password = 'testpassword123'
-        hash1 = generate_password_hash(password)
-        hash2 = generate_password_hash(password)
-        
-        # Hashes should be different (due to salt)
-        assert hash1 != hash2
-        
-        # But both should verify correctly
-        assert check_password_hash(hash1, password)
-        assert check_password_hash(hash2, password)
+    # Hashes should be different (due to salt)
+    assert hash1 != hash2
     
-    def test_check_password_hash(self):
-        """Test password hash verification."""
-        password = 'testpassword123'
-        password_hash = generate_password_hash(password)
-        
-        # Correct password
-        assert check_password_hash(password_hash, password) is True
-        
-        # Wrong password
-        assert check_password_hash(password_hash, 'wrongpassword') is False
+    # But both should verify correctly
+    assert check_password_hash(hash1, password) == True
+    assert check_password_hash(hash2, password) == True
     
-    def test_password_hash_consistency(self):
-        """Test that password hashing is consistent."""
-        password = 'testpassword123'
-        hash1 = generate_password_hash(password)
-        
-        # Same password should verify against the hash
-        assert check_password_hash(hash1, password) is True
-        
-        # Different password should not verify
-        assert check_password_hash(hash1, 'differentpassword') is False
+    # Wrong password should fail
+    assert check_password_hash(hash1, 'Wrong123!') == False
 
 
-class TestCodeValidation:
-    """Tests for code validation utilities."""
-    
-    def test_code_length_validation(self):
-        """Test code length validation."""
-        short_code = 'x' * 100
-        long_code = 'x' * 10000
-        
-        # Should accept reasonable length
-        assert len(short_code) < 10000
-        
-        # Should reject very long code
-        assert len(long_code) > 1000
-    
-    def test_code_line_count(self):
-        """Test counting lines in code."""
-        code_10_lines = '\n'.join([f'line {i}' for i in range(10)])
-        code_1000_lines = '\n'.join([f'line {i}' for i in range(1000)])
-        code_2000_lines = '\n'.join([f'line {i}' for i in range(2000)])
-        
-        assert code_10_lines.count('\n') + 1 == 10
-        assert code_1000_lines.count('\n') + 1 == 1000
-        assert code_2000_lines.count('\n') + 1 == 2000
+def test_allowed_file_extensions():
+    """Test allowed file extension validation."""
+    assert allowed_file('test.py') == True
+    assert allowed_file('test.java') == True
+    assert allowed_file('test.PY') == True  # Case insensitive
+    assert allowed_file('test.JAVA') == True
+    assert allowed_file('test.txt') == False
+    assert allowed_file('test.py.bak') == False
+    assert allowed_file('test') == False  # No extension
 
 
-class TestEmailValidation:
-    """Tests for email validation."""
+def test_get_language_from_extension():
+    """Test getting language from file extension."""
+    assert get_language_from_extension('test.py') == 'python'
+    assert get_language_from_extension('test.java') == 'java'
+    assert get_language_from_extension('test.PY') == 'python'  # Case insensitive
+    assert get_language_from_extension('test.JAVA') == 'java'
+    assert get_language_from_extension('test.txt') == 'auto'  # Unknown extension returns 'auto'
+    assert get_language_from_extension('test.cs') == 'csharp'
+    assert get_language_from_extension('test.js') == 'javascript'
+
+
+def test_gmail_validation():
+    """Test Gmail address validation."""
+    valid_emails = [
+        'test@gmail.com',
+        'user.name@gmail.com',
+        'user+tag@gmail.com',
+        '123@gmail.com'
+    ]
     
-    def test_gmail_validation(self):
-        """Test Gmail address validation."""
-        valid_emails = [
-            'test@gmail.com',
-            'user.name@gmail.com',
-            'user+tag@gmail.com',
-        ]
-        
-        invalid_emails = [
-            'test@yahoo.com',
-            'test@hotmail.com',
-            'notanemail',
-            'test@',
-        ]
-        
-        for email in valid_emails:
-            assert '@' in email and email.endswith('@gmail.com')
-        
-        for email in invalid_emails:
-            if not email.endswith('@gmail.com'):
-                assert True  # Invalid as expected
+    invalid_emails = [
+        'test@gmail',
+        'test@example.com',
+        'test@yahoo.com',
+        'notanemail'
+    ]
+    
+    for email in valid_emails:
+        assert '@' in email and email.lower().endswith('@gmail.com')
+    
+    for email in invalid_emails:
+        assert not ('@' in email and email.lower().endswith('@gmail.com'))
+
+
+def test_verification_code_format():
+    """Test verification code format validation."""
+    valid_codes = ['123456', '000000', '999999']
+    invalid_codes = ['12345', '1234567', 'abcdef', '12345a', '']
+    
+    for code in valid_codes:
+        assert len(code) == 6 and code.isdigit()
+    
+    for code in invalid_codes:
+        assert not (len(code) == 6 and code.isdigit())
+
+
+def test_email_format_validation():
+    """Test email format validation."""
+    valid_emails = [
+        'user@gmail.com',
+        'user.name@gmail.com',
+        'user+tag@gmail.com'
+    ]
+    
+    invalid_emails = [
+        'notanemail',
+        '@gmail.com',
+        'user@',
+        'user @gmail.com'  # Space
+    ]
+    
+    for email in valid_emails:
+        parts = email.split('@')
+        assert len(parts) == 2 and '.' in parts[1], f"Email '{email}' should be valid"
+    
+    for email in invalid_emails:
+        if '@' in email:
+            parts = email.split('@')
+            # Check if there's a valid local part (before @) and domain part (after @)
+            # Also check for spaces in email
+            has_space = ' ' in email
+            is_valid = len(parts) == 2 and len(parts[0]) > 0 and '.' in parts[1] if len(parts) > 1 else False
+            is_valid = is_valid and not has_space
+        else:
+            is_valid = False
+        assert not is_valid, f"Email '{email}' should be invalid"
+
+
+def test_password_strength_validation():
+    """Test password strength validation (basic checks)."""
+    # In a real app, you'd have more sophisticated validation
+    weak_passwords = ['123', 'abc', 'short', 'weak']  # All < 8 characters
+    strong_passwords = ['Test123!', 'SecurePass1', 'MyP@ssw0rd', 'LongEnough123']  # All >= 8 characters
+    
+    for pwd in weak_passwords:
+        assert len(pwd) < 8, f"Password '{pwd}' should be considered weak (too short)"
+    
+    for pwd in strong_passwords:
+        assert len(pwd) >= 8, f"Password '{pwd}' should meet minimum length requirement"
 

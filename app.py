@@ -2,6 +2,10 @@ import os
 import sqlite3
 import re
 import uuid
+import json
+import smtplib
+import ssl
+from email.mime.text import MIMEText
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, g, session, jsonify, send_file
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -10,7 +14,8 @@ from flask_socketio import SocketIO, emit, disconnect
 from models import initialize_database, get_user_by_username, create_user, create_analysis, get_recent_analyses, create_uploaded_file, get_uploaded_files
 from models import list_all_users, delete_user_and_related, get_user_count
 from models import approve_user, get_user_by_id, update_user_role
-from models import save_uploaded_file, get_uploaded_file, submit_activity
+from models import set_user_verification_token, get_user_by_verification_token, get_user_by_verification_code, mark_user_verified, update_user_password
+from models import save_uploaded_file, get_uploaded_file, submit_activity, update_submission_analysis
 from models import create_group, get_teacher_groups, get_group_by_id, get_group_members, delete_group
 from models import join_group, approve_group_member, decline_group_member
 from models import create_activity, get_group_activities, get_student_activities, get_activity_by_id
@@ -25,12 +30,53 @@ from deep_learning_detector import analyze_code_deep_learning
 from enhanced_detector import analyze_code_with_enhanced_dataset
 from code_executor import CodeExecutor
 from interactive_executor import InteractiveExecutor
+from google_auth import google_auth_bp
 
+
+# Flask application & configuration
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'
+# Flask secret key – priority order: env var > local_config.py > hardcoded fallback
+try:
+    from local_config import FLASK_SECRET_KEY as LOCAL_SECRET_KEY
+    _local_secret_key = LOCAL_SECRET_KEY
+except ImportError:
+    _local_secret_key = None
+
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or _local_secret_key or 'your-secret-key-here'
+# Configure session cookies to persist across redirects (needed for OAuth)
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Allows cross-site redirects for OAuth
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
 app.config['DATABASE'] = 'database.sqlite3'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+# Gmail SMTP credentials – priority order:
+#   1. Environment variables (GMAIL_USER, GMAIL_PASS)
+#   2. local_config.py file (gitignored, not committed)
+#   3. Hardcoded fallback values (for development only)
+try:
+    from local_config import GMAIL_USER as LOCAL_GMAIL_USER, GMAIL_PASS as LOCAL_GMAIL_PASS
+    _local_gmail_user = LOCAL_GMAIL_USER
+    _local_gmail_pass = LOCAL_GMAIL_PASS
+except ImportError:
+    _local_gmail_user = None
+    _local_gmail_pass = None
+
+gmail_user = os.environ.get('GMAIL_USER') or _local_gmail_user or 'guillenoalvin25@gmail.com'
+gmail_pass = os.environ.get('GMAIL_PASS') or _local_gmail_pass or 'zpoimtbcfukufrwc'  # App password without spaces
+
+app.config['MAIL_GMAIL_USER'] = gmail_user
+app.config['MAIL_GMAIL_PASS'] = gmail_pass
+
+# Log email configuration status (without exposing password)
+if gmail_user and gmail_pass:
+    app.logger.info(f"Gmail SMTP configured for: {gmail_user}")
+else:
+    app.logger.warning("Gmail SMTP credentials not configured - email sending will be disabled")
+
+# Register blueprints (Google OAuth)
+app.register_blueprint(google_auth_bp)
 
 # Initialize SocketIO
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
@@ -103,6 +149,40 @@ def load_logged_in_user():
     if 'user_id' in session:
         g.user = get_user_by_username(app.config['DATABASE'], session['user_id'])
 
+
+# Import email utilities
+from email_utils import send_verification_email as _send_verification_email, send_welcome_email as _send_welcome_email
+
+
+def generate_verification_code() -> str:
+    """Generate a 6-digit verification code."""
+    import random
+    return str(random.randint(100000, 999999))
+
+
+def send_verification_email(recipient_email: str, code: str) -> None:
+    """Send a Gmail-based verification email with 6-digit code if SMTP is configured.
+    This is for EMAIL/PASSWORD registration - user must verify before login.
+    """
+    # Call the utility function
+    _send_verification_email(recipient_email, code, app)
+    
+    # If SMTP not configured, show fallback in UI
+    if not app.config.get('MAIL_GMAIL_USER') or not app.config.get('MAIL_GMAIL_PASS'):
+        try:
+            flash('Email sending is not configured. Your verification code is:', 'warning')
+            flash(code, 'info')
+        except RuntimeError:
+            # flash may fail if called outside a request context; ignore
+            pass
+
+
+def send_welcome_email(recipient_email: str, name: str) -> None:
+    """Send a welcome/confirmation email to Google SSO users.
+    This is for GOOGLE SSO registration - user is already verified by Google.
+    """
+    _send_welcome_email(recipient_email, name, app)
+
 # Admin utilities
 from functools import wraps
 
@@ -149,13 +229,33 @@ def index():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form['username']
+        username = request.form['username'].strip()
         password = request.form['password']
+        confirm = request.form.get('confirm', '')
         
-        if not username or not password:
+        if not username or not password or not confirm:
             flash('Please fill in all fields.', 'error')
+        elif password != confirm:
+            flash('Passwords do not match.', 'error')
+        elif '@' not in username or not username.lower().endswith('@gmail.com'):
+            flash('Please register with a valid Gmail address (example@gmail.com).', 'error')
         else:
             try:
+                # If user already exists, handle gracefully instead of raising a DB error
+                existing = get_user_by_username(app.config['DATABASE'], username)
+                if existing:
+                    if existing.get('is_approved'):
+                        flash('This email is already registered. Please log in or use password reset.', 'warning')
+                        return redirect(url_for('login'))
+                    # User exists but not verified – resend verification code
+                    from datetime import datetime, timedelta
+                    code = generate_verification_code()
+                    expires_at = (datetime.utcnow() + timedelta(minutes=10)).isoformat()
+                    set_user_verification_token(app.config['DATABASE'], existing['id'], code, expires_at)
+                    send_verification_email(username, code)
+                    flash('This email is already registered but not verified. A new verification code has been sent to your email.', 'info')
+                    return redirect(url_for('verify_code'))
+
                 # First user becomes admin automatically and approved
                 is_first_user = get_user_count(app.config['DATABASE']) == 0
                 user_id = create_user(
@@ -169,22 +269,24 @@ def register():
                 if is_first_user:
                     flash('Registration successful! Your account has admin privileges and is approved.', 'success')
                 else:
-                    # Notify all admins about new registration requiring approval
-                    admins = get_all_admin_users(app.config['DATABASE'])
-                    for admin in admins:
-                        create_notification(
-                            app.config['DATABASE'],
-                            admin['id'],
-                            'new_registration',
-                            'New User Registration',
-                            f"New user '{username}' has registered and is awaiting approval.",
-                            user_id,
-                            'user'
-                        )
-                    flash('Registration successful! Awaiting admin approval.', 'info')
-                return redirect(url_for('login'))
+                    # Generate 6-digit verification code and send Gmail confirmation
+                    from datetime import datetime, timedelta
+                    code = generate_verification_code()
+                    expires_at = (datetime.utcnow() + timedelta(minutes=10)).isoformat()
+                    set_user_verification_token(app.config['DATABASE'], user_id, code, expires_at)
+                    send_verification_email(username, code)
+                    if app.config.get('MAIL_GMAIL_USER') and app.config.get('MAIL_GMAIL_PASS'):
+                        flash('Registration successful! Please check your Gmail inbox for the 6-digit verification code.', 'info')
+                    else:
+                        flash('Registration successful! Enter the verification code shown above to activate your account.', 'info')
+                return redirect(url_for('verify_code'))
+            except sqlite3.IntegrityError as e:
+                # Fallback friendly message for any unique-constraint or integrity errors
+                app.logger.error(f"Registration integrity error: {e}")
+                flash('This email is already registered. Please log in or use password reset.', 'error')
             except Exception as e:
-                flash(f'Registration failed: {str(e)}', 'error')
+                app.logger.error(f"Registration failed: {e}")
+                flash('Registration failed due to an unexpected error. Please try again later.', 'error')
     
     return render_template('register.html')
 
@@ -193,17 +295,36 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        
         user = get_user_by_username(app.config['DATABASE'], username)
-        if user and check_password_hash(user['password_hash'], password):
-            if not user.get('is_approved'):
-                flash('Your account is pending approval by an admin.', 'warning')
-                return redirect(url_for('login'))
-            session['user_id'] = username
-            flash('Login successful!', 'success')
-            return redirect(url_for('dashboard'))
-        else:
+        
+        if not user:
             flash('Invalid username or password.', 'error')
+        else:
+            # Check if user has a password set
+            password_hash = user.get('password_hash', '').strip() if user.get('password_hash') else ''
+            
+            app.logger.debug(f"Login attempt for user: {username}, has_password: {bool(password_hash)}, has_google_id: {bool(user.get('google_id'))}")
+            
+            # If user has google_id but no password, suggest Google login
+            if user.get('google_id') and not password_hash:
+                flash('This account was created with Google. Please use "Sign in with Google" instead.', 'warning')
+            # If user has no password at all
+            elif not password_hash:
+                flash('Invalid username or password.', 'error')
+            # Check password
+            else:
+                password_valid = check_password_hash(password_hash, password)
+                app.logger.debug(f"Password check result: {password_valid}")
+                if not password_valid:
+                    flash('Invalid username or password.', 'error')
+                else:
+                    # Valid password check passed
+                    if not user.get('is_approved'):
+                        flash('Your email is not verified yet. Please check your inbox for the verification link.', 'warning')
+                        return redirect(url_for('login'))
+                    session['user_id'] = username
+                    flash('Login successful!', 'success')
+                    return redirect(url_for('dashboard'))
     
     return render_template('login.html')
 
@@ -212,6 +333,118 @@ def logout():
     session.clear()
     flash('You have been logged out.', 'info')
     return redirect(url_for('index'))
+
+
+@app.route('/verify', methods=['GET', 'POST'])
+def verify_code():
+    """Verification page where users enter their 6-digit code."""
+    if request.method == 'POST':
+        code = request.form.get('code', '').strip()
+        
+        if not code or len(code) != 6 or not code.isdigit():
+            flash('Please enter a valid 6-digit code.', 'error')
+            return render_template('verify_code.html')
+        
+        user = get_user_by_verification_code(app.config['DATABASE'], code)
+        if not user:
+            flash('Invalid or expired verification code. Please check your email and try again.', 'error')
+            return render_template('verify_code.html')
+        
+        try:
+            mark_user_verified(app.config['DATABASE'], user['id'])
+            # Store user email in session for password creation
+            session['pending_password_user'] = user['username']
+            session['pending_password_user_id'] = user['id']
+            # Check if user already has a password (email/password registration) or needs to create one (Google OAuth)
+            if not user.get('password_hash') or user.get('password_hash').strip() == '':
+                flash('Email verified successfully! Please create a password for your account.', 'success')
+                return redirect(url_for('create_password'))
+            else:
+                flash('Email verified successfully! You can now log in.', 'success')
+                session.pop('pending_password_user', None)
+                session.pop('pending_password_user_id', None)
+                return redirect(url_for('login'))
+        except Exception as e:
+            app.logger.error(f"Failed to verify code for user {user['id']}: {e}")
+            flash('Failed to verify code. Please try again later.', 'error')
+    
+    return render_template('verify_code.html')
+
+
+@app.route('/create-password', methods=['GET', 'POST'])
+def create_password():
+    """Password creation page after email verification."""
+    # Check if user is in the password creation flow
+    pending_user = session.get('pending_password_user')
+    pending_user_id = session.get('pending_password_user_id')
+    
+    if not pending_user or not pending_user_id:
+        flash('Please verify your email first.', 'warning')
+        return redirect(url_for('verify_code'))
+    
+    # Get user to check if they already have a password
+    user = get_user_by_username(app.config['DATABASE'], pending_user)
+    if not user:
+        flash('User not found.', 'error')
+        session.pop('pending_password_user', None)
+        session.pop('pending_password_user_id', None)
+        return redirect(url_for('login'))
+    
+    # If user already has a password, redirect to login
+    if user.get('password_hash') and user.get('password_hash').strip() != '':
+        flash('You already have a password. Please log in.', 'info')
+        session.pop('pending_password_user', None)
+        session.pop('pending_password_user_id', None)
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        confirm_password = request.form.get('confirm_password', '')
+        
+        if not password or len(password) < 6:
+            flash('Password must be at least 6 characters long.', 'error')
+            return render_template('create_password.html', email=pending_user)
+        
+        if password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return render_template('create_password.html', email=pending_user)
+        
+        try:
+            # Update user password
+            password_hash = generate_password_hash(password)
+            app.logger.info(f"Creating password for user {pending_user_id} (email: {pending_user})")
+            update_user_password(app.config['DATABASE'], pending_user_id, password_hash)
+            
+            # Verify password was saved correctly
+            updated_user = get_user_by_username(app.config['DATABASE'], pending_user)
+            if updated_user and updated_user.get('password_hash'):
+                app.logger.info(f"Password successfully saved for user {pending_user_id}")
+                # Test password verification
+                if check_password_hash(updated_user['password_hash'], password):
+                    app.logger.info(f"Password verification test passed for user {pending_user_id}")
+                else:
+                    app.logger.error(f"Password verification test FAILED for user {pending_user_id}")
+            else:
+                app.logger.error(f"Password was not saved correctly for user {pending_user_id}")
+            
+            # Clear pending session
+            session.pop('pending_password_user', None)
+            session.pop('pending_password_user_id', None)
+            
+            flash('Password created successfully! You can now log in.', 'success')
+            return redirect(url_for('login'))
+        except Exception as e:
+            app.logger.error(f"Failed to create password for user {pending_user_id}: {e}", exc_info=True)
+            flash('Failed to create password. Please try again.', 'error')
+    
+    return render_template('create_password.html', email=pending_user)
+
+
+@app.route('/verify/<token>')
+def verify_email(token):
+    """Legacy verification endpoint for backward compatibility (redirects to code verification)."""
+    flash('Please use the verification code sent to your email instead.', 'info')
+    return redirect(url_for('verify_code'))
 
 @app.route('/dashboard')
 def dashboard():
@@ -282,15 +515,10 @@ def groups():
 
 @app.route('/code_analysis')
 def code_analysis():
-    # Allow teachers and admins to access code analysis
+    # Allow any authenticated user to access code analysis
     if not g.user:
         flash('Please log in to continue.', 'warning')
         return redirect(url_for('login'))
-    
-    user_role = g.user.get('role', 'student')
-    if user_role not in ['teacher', 'admin'] and not g.user.get('is_admin'):
-        flash('Access denied. Teacher or admin role required.', 'error')
-        return redirect(url_for('dashboard'))
     
     # Get code from query parameter if provided
     code_input = request.args.get('code', '')
@@ -383,7 +611,8 @@ def admin_delete_user(user_id: int):
 @app.route('/remove_history/<int:analysis_id>', methods=['POST'])
 def remove_history(analysis_id: int):
     if not g.user:
-        return jsonify({'success': False, 'message': 'Please log in to continue.'}), 401
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('login'))
     try:
         conn = sqlite3.connect(app.config['DATABASE'])
         cur = conn.execute("DELETE FROM analyses WHERE id = ? AND user_id = ?", (analysis_id, g.user['id']))
@@ -486,6 +715,14 @@ def remove_uploaded_file(file_id):
 
 # Text analysis endpoints removed
 
+@app.route('/detect', methods=['POST'])
+def detect():
+    """Legacy detect route - redirects to detect_enhanced"""
+    if not g.user:
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('login'))
+    return detect_enhanced()
+
 @app.route('/detect_enhanced', methods=['POST'])
 def detect_enhanced():
     if not g.user:
@@ -498,6 +735,12 @@ def detect_enhanced():
         
         if not code:
             flash('Please paste some code.', 'error')
+            return redirect(url_for('dashboard'))
+        
+        # Enforce 1,000-line limit by rejecting submissions that reach/exceed the cap
+        lines = code.split('\n')
+        if len(lines) >= 1000:
+            flash('Line limit reached (1,000). Please trim your code before analyzing.', 'error')
             return redirect(url_for('dashboard'))
         
         # Enhanced code analysis using comprehensive dataset
@@ -542,7 +785,8 @@ def detect_enhanced():
 def run_code():
     """Execute code and return results"""
     if not g.user:
-        return jsonify({'success': False, 'error': 'Please log in to continue.'}), 401
+        flash('Please log in to continue.', 'warning')
+        return redirect(url_for('login'))
     
     try:
         data = request.get_json()
@@ -1054,7 +1298,41 @@ def submit_activity_route(activity_id):
             return redirect(url_for('view_activity', activity_id=activity_id))
     
     try:
-        submit_activity(app.config['DATABASE'], activity_id, g.user['id'], content, file_id)
+        # Save submission record
+        submission_id = submit_activity(app.config['DATABASE'], activity_id, g.user['id'], content, file_id)
+        
+        # Build code text for AI/human analysis
+        code_text = content or ''
+        if not code_text and file_id:
+            # Load code from uploaded file on disk
+            uploaded_info = get_uploaded_file(app.config['DATABASE'], file_id)
+            if uploaded_info:
+                file_path = uploaded_info.get('file_path')
+                if file_path and os.path.exists(file_path):
+                    try:
+                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            code_text = f.read()
+                    except Exception:
+                        code_text = ''
+        
+        # Run enhanced AI/human analysis if we have code
+        if code_text:
+            try:
+                analysis_result = analyze_code_with_enhanced_dataset(code_text, 'auto')
+                final_pred = analysis_result.get('final_prediction', {})
+                ai_label = final_pred.get('label')
+                ai_score = final_pred.get('score')
+                explanation = json.dumps(analysis_result)
+                if ai_label is not None and ai_score is not None:
+                    update_submission_analysis(
+                        app.config['DATABASE'],
+                        submission_id,
+                        ai_label,
+                        float(ai_score),
+                        explanation,
+                    )
+            except Exception as e:
+                app.logger.error(f"Failed to auto-analyze submission {submission_id}: {e}")
         
         # Get activity details to notify teacher
         activity = get_activity_by_id(app.config['DATABASE'], activity_id)
@@ -1097,7 +1375,7 @@ def view_activity_submissions(activity_id):
 @app.route('/teacher/submission/<int:submission_id>/grade', methods=['POST'])
 @teacher_required
 def grade_submission_route(submission_id):
-    grade = request.form.get('grade', '').strip()
+    grade = request.form.get('grade', '').strip() or request.form.get('score', '').strip()
     feedback = request.form.get('feedback', '').strip()
     
     try:
@@ -1109,7 +1387,12 @@ def grade_submission_route(submission_id):
     except Exception as e:
         flash(f'Failed to grade submission: {str(e)}', 'error')
     
-    return redirect(url_for('view_activity_submissions', activity_id=request.form.get('activity_id')))
+    activity_id = request.form.get('activity_id')
+    if activity_id:
+        return redirect(url_for('view_activity_submissions', activity_id=activity_id))
+    else:
+        # Fallback to teacher dashboard if activity_id not provided
+        return redirect(url_for('teacher_dashboard'))
 
 @app.route('/api/notifications')
 def get_notifications():
@@ -1234,6 +1517,14 @@ def view_student_submission(student_id, activity_id):
         flash('Submission not found.', 'error')
         return redirect(url_for('dashboard'))
     
+    # Decode AI analysis if available
+    detailed_analysis = None
+    if submission.get('ai_explanation'):
+        try:
+            detailed_analysis = json.loads(submission['ai_explanation'])
+        except Exception:
+            detailed_analysis = None
+    
     # Get activity details
     conn = sqlite3.connect(app.config['DATABASE'])
     conn.row_factory = sqlite3.Row
@@ -1245,9 +1536,12 @@ def view_student_submission(student_id, activity_id):
         flash('Activity not found.', 'error')
         return redirect(url_for('dashboard'))
     
-    return render_template('view_student_submission.html', 
-                          submission=submission, 
-                          activity=dict(activity))
+    return render_template(
+        'view_student_submission.html',
+        submission=submission,
+        activity=dict(activity),
+        detailed_analysis=detailed_analysis,
+    )
 
 # WebSocket events for interactive code execution
 @socketio.on('start_interactive_execution')

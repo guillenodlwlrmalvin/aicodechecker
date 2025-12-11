@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block content %}
+	<h2 class="page-title">Verify Your Account</h2>
+	
+	<div class="card form-card">
+		<h3 style="margin-top: 0; margin-bottom: 16px; font-size: 1.1em; color: var(--text-primary);">Enter Verification Code</h3>
+		<p class="muted" style="margin-bottom: 20px; font-size: 0.9em;">
+			We've sent a 6-digit verification code to your email address. 
+			Please enter the code below to verify your account.
+		</p>
+		<p class="muted" style="margin-bottom: 20px; font-size: 0.85em; color: var(--text-secondary);">
+			The code will expire in 10 minutes.
+		</p>
+		
+		<form method="post" class="form">
+			<label>
+				<span>Verification Code</span>
+				<input 
+					name="code" 
+					type="text" 
+					placeholder="000000" 
+					maxlength="6" 
+					pattern="[0-9]{6}"
+					required 
+					autocomplete="off"
+					style="text-align: center; font-size: 1.5em; letter-spacing: 0.5em; font-weight: bold;"
+					oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 6);"
+				/>
+			</label>
+			<button class="button primary" type="submit">Verify Account</button>
+			<p class="muted" style="margin-top: 16px;">
+				Didn't receive the code? 
+				<a href="{{ url_for('login') }}">Try logging in again</a> to resend it.
+			</p>
+			<p class="muted">
+				Already verified? <a href="{{ url_for('login') }}">Go to Login</a>
+			</p>
+		</form>
+	</div>
+
+	<script>
+		// Auto-focus on code input
+		document.querySelector('input[name="code"]').focus();
+		
+		// Auto-submit when 6 digits are entered
+		const codeInput = document.querySelector('input[name="code"]');
+		codeInput.addEventListener('input', function() {
+			if (this.value.length === 6) {
+				// Small delay to show the last digit
+				setTimeout(() => {
+					this.form.submit();
+				}, 100);
+			}
+		});
+	</script>
+{% endblock %}
+

@@ -4,34 +4,156 @@ __pycache__/
 *$py.class
 *.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Virtual Environment
+# Virtual Environments
 venv/
 env/
 ENV/
+env.bak/
+venv.bak/
+.venv
 
-# Database
+# Database files (contain user data and sensitive information)
 *.sqlite3
 *.db
+*.sqlite
 database.sqlite3
+*.db-journal
 
-# Coverage reports
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.env
+secrets.json
+config.json
+credentials.json
+.credentials
+
+# Flask
+instance/
+.webassets-cache
+
+# Testing
+.pytest_cache/
 .coverage
 htmlcov/
-.coverage.*
-coverage.xml
+.tox/
+.hypothesis/
 *.cover
+*.log
+test_*.db
+test_*.sqlite3
 
-# IDE
+# Uploaded files (may contain user data)
+uploads/
+uploads/*
+!uploads/.gitkeep
+
+# IDE and Editor files
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
+*~
 .DS_Store
-Thumbs.db
+*.sublime-project
+*.sublime-workspace
 
-# Large files excluded
+# OS files
+Thumbs.db
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# Large datasets (already in existing .gitignore)
 AIGCodeSet/all_data_with_ada_embeddings_will_be_splitted_into_train_test_set.csv
 datasets/test.jsonl
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+dummy
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Archives
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# Application specific
+ALLOW_SECRETS.md
+allow_secrets.ps1
+allow_secrets.sh
+allow_secrets.bat
+
+# Local configuration (contains sensitive credentials)
+local_config.py
+config.local.py
+secrets.py
+
+# Google OAuth credentials
+client_secret*.json
+credentials*.json
+token*.json
+*.pem
+*.key
+
+# Model files and large data
+*.pkl
+*.h5
+*.hdf5
+*.model
+*.pt
+*.pth
+models/
+checkpoints/
+
+# Cache directories
+.cache/
+*.cache

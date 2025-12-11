@@ -1,0 +1,14 @@
+# Copy this file to local_config.py and fill in your credentials
+# local_config.py is gitignored and will not be committed to Git
+
+# Gmail SMTP credentials for email sending
+GMAIL_USER = 'your-email@gmail.com'
+GMAIL_PASS = 'your-app-password-here'
+
+# Flask secret key for sessions
+FLASK_SECRET_KEY = 'your-secret-key-here'
+
+# Google OAuth credentials
+GOOGLE_CLIENT_ID = 'your-google-client-id-here.apps.googleusercontent.com'
+GOOGLE_CLIENT_SECRET = 'your-google-client-secret-here'
+
