@@ -1,0 +1,39 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Trigger Render Deployment
+      env:
+        RENDER_SECRET_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+      run: |
+        echo "Triggering Render deployment..."
+        # Prefer secret if set, otherwise use direct URL
+        if [ -n "$RENDER_SECRET_URL" ]; then
+          DEPLOY_URL="$RENDER_SECRET_URL"
+          echo "Using deploy URL from GitHub secret"
+        else
+          # Direct URL - consider moving to GitHub Secrets for better security
+          DEPLOY_URL="https://api.render.com/deploy/srv-d4udh86uk2gs738p9s7g?key=SmcEmYVfxWo"
+          echo "Using direct deploy URL"
+        fi
+        
+        response=$(curl -s -w "\n%{http_code}" -X POST "$DEPLOY_URL")
+        http_code=$(echo "$response" | tail -n1)
+        body=$(echo "$response" | sed '$d')
+        
+        if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 204 ]; then
+          echo "✓ Deployment triggered successfully!"
+          echo "Response: $body"
+        else
+          echo "✗ Deployment trigger failed with HTTP $http_code"
+          echo "Response: $body"
+          exit 1
+        fi
+
